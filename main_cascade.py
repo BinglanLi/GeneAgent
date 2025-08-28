@@ -13,6 +13,9 @@ openai.api_key = "*************************"
 
 from worker import AgentPhD
 
+import tiktoken
+MAX_TOKENS = 127900
+encoding = tiktoken.encoding_for_model("gpt-4o")
 
 ## baseline 
 system = "You are an efficient and insightful assistant to a molecular biologist."
