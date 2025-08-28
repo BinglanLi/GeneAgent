@@ -123,6 +123,10 @@ def GeneAgent(ID, genes):
     pattern = re.compile(r'^[a-zA-Z0-9,.;?!*()_-]+$')
     ## send genes to GPT-4 and generate the original template of process name and analysis
     try:
+        # Ensure output directories exist
+        os.makedirs("Outputs/GPT-4", exist_ok=True)
+        os.makedirs("Outputs/GeneAgent/Cascade", exist_ok=True)
+        os.makedirs("Verification Reports/Cascade", exist_ok=True)
         prompt_baseline = baseline(genes)
         first_step = prompt_baseline + system
         token_baseline = encoding.encode(first_step)
