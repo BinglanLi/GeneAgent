@@ -2,12 +2,28 @@ import json
 import time
 import pandas as pd
 
-import openai
-## Replace with your own OpenAI model and key
-openai.api_type = "azure"
-openai.api_base = "***************"
-openai.api_version = "*****************"
-openai.api_key = "**************************" 
+from openai import OpenAI
+try:
+    from openai import AzureOpenAI
+except Exception:
+    AzureOpenAI = None
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+def _create_openai_client():
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
+    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
+    if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
+        return AzureOpenAI(
+            azure_endpoint=azure_endpoint,
+            api_key=azure_api_key,
+            api_version=azure_api_version,
+        )
+    return OpenAI()
+
+client = _create_openai_client()
 
 from worker import AgentPhD
 from topic import topic_verification
@@ -39,13 +55,13 @@ if __name__ == "__main__":
             {"role":"system", "content":system},
             {"role":"user", "content":prompt_baseline}
         ]
-        summary = openai.ChatCompletion.create(
-			engine="gpt-4o",
+        summary = client.chat.completions.create(
+			model="gpt-4o",
 			messages=messages,
 			temperature=0.0,
-			)
-        messages.append(summary.choices[0]["message"])
-        summary = summary.choices[0]["message"]["content"]
+		)
+        messages.append(summary.choices[0].message)
+        summary = summary.choices[0].message.content
         with open("Outputs/Chain-of-Thought/MsigDB_Response_CoT.txt","a") as f_update:
             f_update.write(summary+"\n")
             f_update.write("//\n")

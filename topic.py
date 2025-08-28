@@ -3,12 +3,26 @@ import time
 import re
 import pandas as pd
 
-import openai
-## Replace with your own OpenAI model and key
-openai.api_type = "azure"
-openai.api_base = "***************"
-openai.api_version = "*****************"
-openai.api_key = "**************************" 
+from openai import OpenAI
+try:
+    from openai import AzureOpenAI
+except Exception:
+    AzureOpenAI = None
+import os
+
+def _create_openai_client():
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
+    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
+    if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
+        return AzureOpenAI(
+            azure_endpoint=azure_endpoint,
+            api_key=azure_api_key,
+            api_version=azure_api_version,
+        )
+    return OpenAI()
+
+client = _create_openai_client()
 
 
 ## topic verification
@@ -34,12 +48,12 @@ def topic_verification(genes, process_name, agentphd):
         {"role":"system", "content":system_verify},
         {"role":"user", "content":prompt_topic}
     ]
-    claims = openai.ChatCompletion.create(
-        engine="gpt-4o",
+    claims = client.chat.completions.create(
+        model="gpt-4o",
         messages=message,
         temperature=0.0,
         )
-    claims = json.loads(claims.choices[0]["message"]["content"])
+    claims = json.loads(claims.choices[0].message.content)
     print("=====Topic Claim=====")
     print(claims)
     
@@ -64,14 +78,14 @@ def topic_verification(genes, process_name, agentphd):
     message.append(
         {"role":"user", "content":f"I have finished the verification for the process name, here is the verification report:{verification}\nPlease replace the process name with the most significant function of gene set.\nPlease start a message with \"Topic:\" and only return the brief revised name."}
     )
-    updated = openai.ChatCompletion.create(
-        engine="gpt-4o",
+    updated = client.chat.completions.create(
+        model="gpt-4o",
         messages=message,
         temperature=0.0,
         )
 
     # messages.append(updated_topic.choices[0]["message"])
-    updated = updated.choices[0]["message"]["content"]
+    updated = updated.choices[0].message.content
 
     print("=====Updated Topic=====")
     print(updated)

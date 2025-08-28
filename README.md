@@ -9,7 +9,7 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 
 # Requirement
 	python 3.11.0
-	openai 0.28.0
+	openai >= 1.0
 	torch  1.13.0
 	numpy  1.26.3
 	pandas 2.1.4
@@ -51,19 +51,22 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
     ```
     git@github.com:ncbi-nlp/GeneAgent.git
     ```
-## Replace the openai key
+## Configure OpenAI credentials
 1. Go to the created directory of GeneAgent
    ```
    cd {directory}
    ```
- 2. Open the **main_cascade.py** and the **worker.py** respectively to replace the **openai.api_key** with your own API Key as well as other required parameters **openai.api_base** and **openai.api_version**.
-	```
- 	openai.api_key=YOUR_OWN_OPENAI_KEY
-	openai.api_base=YOUR_OWN_OPENAI_BASE_SETTING
-	openai.api_version=YOUR_OWN_OPENAI_API_VERSION
- 	```
+2. Set environment variables (recommended). For Public OpenAI:
+   - OPENAI_API_KEY
+
+   For Azure OpenAI (optional):
+   - AZURE_OPENAI_API_KEY
+   - AZURE_OPENAI_ENDPOINT
+   - AZURE_OPENAI_API_VERSION
+
+   The code auto-detects Azure settings if provided; otherwise it uses the public OpenAI API.
   >[!TIP]
-   >If you need to run the variants of GeneAgent, such as chain-of-thought **main_CoT.py** and the summarization for multiple biological terms **main_summary.py**, please also make a key replacement accordingly.
+   >If you run variants such as **main_CoT.py** or **main_summary.py**, the same environment variables apply; no code edits are needed.
 
 # Execute
 ## Running

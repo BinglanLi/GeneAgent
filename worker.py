@@ -1,10 +1,26 @@
-import openai
-openai.api_type = "azure"
-openai.api_base = "***************"
-openai.api_version = "***************"
-openai.api_key = "**********************"
-
+from openai import OpenAI
+try:
+    from openai import AzureOpenAI
+except Exception:
+    AzureOpenAI = None
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
+def _create_openai_client():
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
+    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
+    if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
+        return AzureOpenAI(
+            azure_endpoint=azure_endpoint,
+            api_key=azure_api_key,
+            api_version=azure_api_version,
+        )
+    return OpenAI()
+
+client = _create_openai_client()
+
 import time
 import json
 import re
@@ -70,22 +86,22 @@ class AgentPhD:
 			loop += 1
 			# logger.info(f"Input@{loop}\n" +  json.dumps(messages, indent=4))
 			time.sleep(1)
-			completion = openai.ChatCompletion.create(
-				engine="gpt-4o",
+			completion = client.chat.completions.create(
+				model="gpt-4o",
 				messages=message_verification,
 				functions=self.function_docs,
 				temperature=0,
 			)
 
-			message = completion.choices[0]["message"]
+			message = completion.choices[0].message
 			# token_message_output = encoding.encode(str(message))
 			# print(f"=====The message tokens output from the verification step is {len(token_message_output)}=====")
 			# logger.info(f"Output@{loop}\n" +  json.dumps(message, indent=4))
 
-			if "function_call" in message:
+			if getattr(message, "function_call", None):
 				try:
-					function_name = message["function_call"]["name"]
-					function_params = json.loads(message["function_call"]["arguments"])
+					function_name = message.function_call.name
+					function_params = json.loads(message.function_call.arguments)
 					function_to_call = self.name2function[function_name]
 					function_response = function_to_call(**function_params)
 					function_response = f"Function has been called with params {function_params}, and returns {function_response}."
@@ -113,8 +129,8 @@ class AgentPhD:
 			
 			else:
 				try:
-					if "Report: " in message["content"]:
-						report = message["content"].split("Report: ")[-1]
+					if message and getattr(message, "content", None) and "Report: " in message.content:
+						report = message.content.split("Report: ")[-1]
 						token_report = encoding.encode(report)
 						print(f"=====The output tokens of verification report in the verification step is {len(token_report)}=====")
 						if re.match(pattern, report):
