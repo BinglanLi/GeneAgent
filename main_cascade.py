@@ -11,6 +11,7 @@ try:
     from openai import AzureOpenAI
 except Exception:
     AzureOpenAI = None
+from costs import record_chat_completion_cost
 
 load_dotenv()
 
@@ -120,17 +121,6 @@ reposits = [
     "get_pubmed_articles"
 ]
 
-## For Gene Ontology
-# reposits = [
-#     "get_complex_for_gene_set",
-#     "get_disease_for_single_gene",
-#     "get_domain_for_single_gene",
-#     # "get_enrichment_for_gene_set",
-#     "get_pathway_for_gene_set",
-#     "get_interactions_for_gene_set",
-#     "get_gene_summary_for_single_gene",
-#     "get_pubmed_articles"
-# ]
 
 agentphd = AgentPhD(function_names=reposits)
 
@@ -143,7 +133,7 @@ def GeneAgent(ID, genes):
         # Ensure output directories exist
         os.makedirs("Outputs/GPT-4", exist_ok=True)
         os.makedirs("Outputs/GeneAgent/Cascade", exist_ok=True)
-        os.makedirs("Verification Reports/Cascade", exist_ok=True)
+        os.makedirs("Outputs/Verification Reports/Cascade", exist_ok=True)
         prompt_baseline = baseline(genes)
         first_step = prompt_baseline + system
         token_baseline = encoding.encode(first_step)
@@ -152,15 +142,17 @@ def GeneAgent(ID, genes):
             {"role":"system", "content":system},
             {"role":"user", "content":prompt_baseline}
         ]
-        summary = client.chat.completions.create(
+        summary_resp = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
             temperature=0,
         )
-        messages.append(summary.choices[0].message)
-        summary = summary.choices[0].message.content
+        messages.append(summary_resp.choices[0].message)
+        summary = summary_resp.choices[0].message.content
+        cost_info = record_chat_completion_cost(summary_resp, "gpt-4o", tag="baseline_summary")
+        print(f"$ Cost baseline: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
-        with open("Outputs/GPT-4/MsigDB_Response_GPT4.txt","a") as f_summary:
+        with open("Outputs/GPT-4/Baseline_LLM_Responses.txt","a") as f_summary:
             f_summary.write(summary+"\n")
             f_summary.write("//\n")
         print("=====Summary=====")
@@ -173,14 +165,15 @@ def GeneAgent(ID, genes):
             {"role":"system", "content":system_verify},
             {"role":"user", "content":prompt_topic}
         ]
-        claims_topic = client.chat.completions.create(
+        claims_topic_resp = client.chat.completions.create(
             model="gpt-4o",
             messages=message_topic,
             temperature=0,
         )
-
-        claims_topic = json.loads(claims_topic.choices[0].message.content)
-        with open("Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
+        cost_info = record_chat_completion_cost(claims_topic_resp, "gpt-4o", tag="claims_topic")
+        print(f"$ Cost topic claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
+        claims_topic = json.loads(claims_topic_resp.choices[0].message.content)
+        with open("Outputs/Verification Reports/Cascade/Claims_and_Verification_Topic.txt","a") as f_claim:
             f_claim.write(str(claims_topic)+"\n")
             f_claim.write("&&\n")
         print("=====Topic Claim=====")
@@ -193,7 +186,7 @@ def GeneAgent(ID, genes):
             claim_result = agentphd.inference(claim)
             verification_topic += f"Original_claim:{claim}"
             verification_topic += f"Verified_claim:{claim_result}"
-            with open("Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
+            with open("Outputs/Verification Reports/Cascade/Claims_and_Verification_Topic.txt","a") as f_claim:
                 f_claim.write(str(claim)+"\n")
                 f_claim.write(str(claim_result)+"\n")
                 f_claim.write("&&\n")
@@ -204,13 +197,15 @@ def GeneAgent(ID, genes):
         messages.append(
             {"role":"user", "content": modification_prompt}
             )
-        updated_topic = client.chat.completions.create(
+        updated_topic_resp = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
             temperature=0,
         )
-        messages.append(updated_topic.choices[0].message)
-        updated_topic = updated_topic.choices[0].message.content 
+        messages.append(updated_topic_resp.choices[0].message)
+        cost_info = record_chat_completion_cost(updated_topic_resp, "gpt-4o", tag="updated_topic")
+        print(f"$ Cost updated topic: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
+        updated_topic = updated_topic_resp.choices[0].message.content 
         print("=====Updated Topic=====")
         print(updated_topic)
         
@@ -223,14 +218,15 @@ def GeneAgent(ID, genes):
             {"role":"system", "content":system_verify},
             {"role":"user", "content":prompt_analysis}
         ]
-        claims_analysis = client.chat.completions.create(
+        claims_analysis_resp = client.chat.completions.create(
             model="gpt-4o",
             messages=analysis_message,
             temperature=0,
         )
-        
-        claims_analysis = json.loads(claims_analysis.choices[0].message.content)
-        with open("Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
+        cost_info = record_chat_completion_cost(claims_analysis_resp, "gpt-4o", tag="claims_analysis")
+        print(f"$ Cost analysis claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
+        claims_analysis = json.loads(claims_analysis_resp.choices[0].message.content)
+        with open("Outputs/Verification Reports/Cascade/Claims_and_Verification_Analytic_Narratives.txt","a") as f_claim:
             f_claim.write(str(claims_analysis)+"\n")
             f_claim.write("&&\n")
         print("=====Analysis Claim=====")
@@ -243,7 +239,7 @@ def GeneAgent(ID, genes):
             claim_result = agentphd.inference(str(claim))
             verification_analysis += f"Original_claim:{claim}"
             verification_analysis += f"Verified_claim:{claim_result}"
-            with open("Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
+            with open("Outputs/Verification Reports/Cascade/Claims_and_Verification_Analytic_Narratives.txt","a") as f_claim:
                 f_claim.write(str(claim)+"\n")
                 f_claim.write(str(claim_result)+"\n")
                 f_claim.write("&&\n")
@@ -255,24 +251,26 @@ def GeneAgent(ID, genes):
         messages.append(
             {"role":"assistant", "content":summarization_prompt }
         )
-        updated = client.chat.completions.create(
+        updated_resp = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
             temperature=0,
         )
-        
-        update = updated.choices[0].message.content
-        with open("Outputs/GeneAgent/Cascade/MsigDB_Final_Response_GeneAgent.txt","a") as f_final:
+        cost_info = record_chat_completion_cost(updated_resp, "gpt-4o", tag="final_update")
+        print(f"$ Cost final update: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
+        update = updated_resp.choices[0].message.content
+
+        with open("Outputs/GeneAgent/Cascade/Final_Response_GeneAgent.txt","a") as f_final:
             f_final.write(update+"\n")
             f_final.write("//\n")
         print("====Final Update====")
         print(update)
                 
-        with open("Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
+        with open("Outputs/Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
             f_claim.write("////\n")
 
     except Exception as E:
-        with open("Outputs/GeneAgent/Cascade/MsigDB_Final_Response_GeneAgent.txt","a") as f_final:
+        with open("Outputs/GeneAgent/Cascade/Error_Report.txt","a") as f_final:
             f_final.write(ID + "\t")
             f_final.write(f"====There are an error {E} here.====\n")
             f_final.write("//\n")
@@ -282,7 +280,7 @@ def GeneAgent(ID, genes):
             
 if __name__ == "__main__":
 
-    data = pd.read_csv("Datasets/MsigDB/MsigDB_toy.csv", header=0, index_col=None)
+    data = pd.read_csv("Datasets/AlzKB/gene_sets.csv", header=0, index_col=None)
     for ID, genes in zip(data["ID"], data["Genes"]):
         GeneAgent(ID, genes)
         

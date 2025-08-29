@@ -9,6 +9,7 @@ try:
 except Exception:
     AzureOpenAI = None
 import os
+from costs import record_chat_completion_cost
 
 def _create_openai_client():
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
@@ -53,6 +54,8 @@ def topic_verification(genes, process_name, agentphd):
         messages=message,
         temperature=0.0,
         )
+    cost_info = record_chat_completion_cost(claims, "gpt-4o", tag="topic_claims")
+    print(f"$ Cost topic claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
     claims = json.loads(claims.choices[0].message.content)
     print("=====Topic Claim=====")
     print(claims)
@@ -64,7 +67,7 @@ def topic_verification(genes, process_name, agentphd):
         claim_result = agentphd.inference(claim)
         verification += f"Original_claim:{claim}"
         verification += f"Verified_claim:{claim_result}"
-        with open("Verification Reports/Synchronous/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
+        with open("Outputs/Verification Reports/Synchronous/Claims_and_Verification_for_MsigDB.txt","a") as f_claim:
             f_claim.write(str(claim)+"\n")
             f_claim.write(str(claim_result)+"\n")
             f_claim.write("&&\n")
@@ -83,6 +86,8 @@ def topic_verification(genes, process_name, agentphd):
         messages=message,
         temperature=0.0,
         )
+    cost_info = record_chat_completion_cost(updated, "gpt-4o", tag="topic_update")
+    print(f"$ Cost topic update: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
     # messages.append(updated_topic.choices[0]["message"])
     updated = updated.choices[0].message.content

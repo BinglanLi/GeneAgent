@@ -12,6 +12,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+from costs import record_chat_completion_cost
+
 def _create_openai_client():
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
     azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
@@ -105,7 +107,7 @@ if __name__ == "__main__":
     print(len(genes))
     
     des = ""
-    with open ("Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt", "r") as gptfile:
+    with open ("Outputs/Verification Reports/Cascade/Claims_and_Verification_for_MsigDB.txt", "r") as gptfile:
         for line in gptfile.readlines():
             des += line
     functions = extract_functions(des)
@@ -128,6 +130,8 @@ if __name__ == "__main__":
 			temperature=0,
 		)
 
+        cost_info = record_chat_completion_cost(summary, "gpt-4o", tag="multi_summary")
+        print(f"$ Cost summary: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         summary = summary.choices[0].message.content
         with open("Outputs/EnrichedTermTest/gpt.geneagent.msigdb.summary.result.verification.txt","a") as f_summary:
             f_summary.write(summary+"\n")

@@ -7,6 +7,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+from costs import record_chat_completion_cost
+
 def _create_openai_client():
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
     azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
@@ -65,7 +67,7 @@ class AgentPhD:
     
 		system = f"""
   		You are a helpful fact-checker. 
-    	Your task is to verify the claim using the provided tools. 
+   		Your task is to verify the claim using the provided tools. 
      	If there are evidences in your contents, please start a message with "Report:" and return your findings along with evidences.
     	"""
 		content = f"""
@@ -94,6 +96,8 @@ class AgentPhD:
 			)
 
 			message = completion.choices[0].message
+			cost_info = record_chat_completion_cost(completion, "gpt-4o", tag="verification_loop")
+			print(f"$ Cost verification: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 			# token_message_output = encoding.encode(str(message))
 			# print(f"=====The message tokens output from the verification step is {len(token_message_output)}=====")
 			# logger.info(f"Output@{loop}\n" +  json.dumps(message, indent=4))

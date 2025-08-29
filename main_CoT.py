@@ -11,6 +11,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+from costs import record_chat_completion_cost
+
 def _create_openai_client():
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
     azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
@@ -61,6 +63,8 @@ if __name__ == "__main__":
 			temperature=0.0,
 		)
         messages.append(summary.choices[0].message)
+        cost_info = record_chat_completion_cost(summary, "gpt-4o", tag="cot_summary")
+        print(f"$ Cost CoT: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         summary = summary.choices[0].message.content
         with open("Outputs/Chain-of-Thought/MsigDB_Response_CoT.txt","a") as f_update:
             f_update.write(summary+"\n")
