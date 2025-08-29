@@ -1,0 +1,17 @@
+[project]
+name = "geneagent"
+version = "0.1.0"
+description = "Self-verification Language Agent for Gene Set Analysis using Domain Databases"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dotenv>=0.9.9",
+    "numpy>=2.3.2",
+    "openai>=1.102.0",
+    "pandas>=2.3.2",
+    "requests>=2.32.5",
+    "requests-oauthlib>=2.0.0",
+    "seaborn>=0.13.2",
+    "tiktoken>=0.11.0",
+    "torch>=2.8.0",
+]
