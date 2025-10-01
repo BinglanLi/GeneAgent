@@ -7,7 +7,8 @@ from datetime import datetime
 #   OPENAI_PRICE_GPT_4O_INPUT=5.0
 #   OPENAI_PRICE_GPT_4O_OUTPUT=15.0
 PRICES_PER_MILLION = {
-    "gpt-4o": {"input": 5.0, "output": 15.0},
+    "gpt-4o": {"input": 2.5, "output": 10.0},
+    "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
 }
 
 
