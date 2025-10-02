@@ -10,14 +10,21 @@ load_dotenv()
 from costs import record_chat_completion_cost
 
 def _create_openai_client():
-    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
-    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
-    if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
-        return AzureOpenAI(
-            azure_endpoint=azure_endpoint,
-            api_key=azure_api_key,
-            api_version=azure_api_version,
+    target_api = os.getenv("TARGET_API")
+    if target_api == "azure":
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
+        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
+        if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
+            return AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                api_key=azure_api_key,
+                api_version=azure_api_version,
+            )
+    if target_api == "ollama":
+        return OpenAI(
+            base_url="http://localhost:11434/v1",  # Local Ollama API
+            api_key="ollama",
         )
     return OpenAI()
 
@@ -33,7 +40,6 @@ from datetime import datetime
 
 import tiktoken
 MAX_TOKENS = 127900
-encoding = tiktoken.encoding_for_model("gpt-4")
 
 from apis.get_complex_for_gene_set import get_complex_for_gene_set, get_complex_for_gene_set_doc 
 from apis.get_disease_for_single_gene import get_disease_for_single_gene, get_disease_for_single_gene_doc
@@ -63,8 +69,18 @@ class AgentPhD:
 		self.name2function = {function_name: func2info[function_name][0] for function_name in function_names}
 		self.function_docs = [func2info[function_name][1] for function_name in function_names]
 
-	def inference(self, claim):
+	def inference(self, llm, claim):
     
+		try:
+			if llm == "gpt-oss:20b":
+				encoding = tiktoken.get_encoding("o200k_harmony")
+			if llm == "gpt-3.5-turbo":
+				encoding = tiktoken.encoding_for_model("cl100k_base")
+			if llm == "gpt-4o":
+				encoding = tiktoken.encoding_for_model(llm)
+		except KeyError:
+			print(f"Error: Cannot find the encoding for the model {llm}!")
+		
 		system = f"""
   		You are a helpful fact-checker. 
    		Your task is to verify the claim using the provided tools. 
@@ -89,14 +105,14 @@ class AgentPhD:
 			# logger.info(f"Input@{loop}\n" +  json.dumps(messages, indent=4))
 			time.sleep(1)
 			completion = client.chat.completions.create(
-				model="gpt-4o",
+				model=llm,
 				messages=message_verification,
 				functions=self.function_docs,
 				temperature=0,
 			)
 
 			message = completion.choices[0].message
-			cost_info = record_chat_completion_cost(completion, "gpt-4o", tag="verification_loop")
+			cost_info = record_chat_completion_cost(completion, llm, tag="verification_loop")
 			print(f"$ Cost verification: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 			# token_message_output = encoding.encode(str(message))
 			# print(f"=====The message tokens output from the verification step is {len(token_message_output)}=====")

@@ -15,14 +15,21 @@ from costs import record_chat_completion_cost
 load_dotenv()
 
 def _create_openai_client():
-    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
-    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
-    if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
-        return AzureOpenAI(
-            azure_endpoint=azure_endpoint,
-            api_key=azure_api_key,
-            api_version=azure_api_version,
+    target_api = os.getenv("TARGET_API")
+    if target_api == "azure":
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
+        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
+        if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
+            return AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                api_key=azure_api_key,
+                api_version=azure_api_version,
+            )
+    if target_api == "ollama":
+        return OpenAI(
+            base_url="http://localhost:11434/v1",  # Local Ollama API
+            api_key="ollama",
         )
     return OpenAI()
 
@@ -127,27 +134,32 @@ def GeneAgent(ID, genes, llm, dataset_name):
     genes = genes.replace("/",",").replace(" ",",")
     
     pattern = re.compile(r'^[a-zA-Z0-9,.;?!*()_-]+$')
-    
+
+    # Specify output dir
     base_dir = Path(globals().get("__file__", "./_")).absolute().parent
     output_dir = base_dir / "Outputs" / llm / dataset_name
-    output_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        encoding = tiktoken.encoding_for_model(llm)
+        if llm == "gpt-oss:20b":
+            encoding = tiktoken.get_encoding("o200k_harmony")
+        if llm == "gpt-3.5-turbo":
+            encoding = tiktoken.encoding_for_model("cl100k_base")
+        if llm == "gpt-4o":
+            encoding = tiktoken.encoding_for_model(llm)
     except KeyError:
         print(f"Error: Cannot find the encoding for the model {llm}!")
 
     ## send genes to GPT-4 and generate the original template of process name and analysis
     try:
-        # Ensure output directories exist
+        # Track total usage across steps
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        total_cost = 0.0
+        # Specify output filenames
         baseline_file = output_dir / "Baseline_LLM_Responses.txt"
-        baseline_file.unlink(missing_ok=True)   # Python 3.8+
         topic_file = output_dir / "Claims_and_Verification_Topic.txt"
-        topic_file.unlink(missing_ok=True)
         analysis_file = output_dir / "Claims_and_Verification_Analytic_Narratives.txt"
-        analysis_file.unlink(missing_ok=True)
         final_file = output_dir / "Final_Response_GeneAgent.txt"
-        final_file.unlink(missing_ok=True)
 
         # Obtain the baseline summary
         print("=====Generating Baseline Summary=====")
@@ -166,7 +178,10 @@ def GeneAgent(ID, genes, llm, dataset_name):
         )
         messages.append(summary_resp.choices[0].message)
         summary = summary_resp.choices[0].message.content
-        cost_info = record_chat_completion_cost(summary_resp, llm, tag="baseline_summary")
+        cost_info = record_chat_completion_cost(summary_resp, llm, tag=f"{dataset_name}_baseline_summary")
+        total_prompt_tokens += cost_info["prompt_tokens"]
+        total_completion_tokens += cost_info["completion_tokens"]
+        total_cost += cost_info["total_cost"]
         print(f"$ Cost baseline: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
         print("=====Saving Baseline Summary=====")
@@ -189,7 +204,10 @@ def GeneAgent(ID, genes, llm, dataset_name):
             messages=message_topic,
             temperature=0,
         )
-        cost_info = record_chat_completion_cost(claims_topic_resp, llm, tag="claims_topic")
+        cost_info = record_chat_completion_cost(claims_topic_resp, llm, tag=f"{dataset_name}_claims_topic")
+        total_prompt_tokens += cost_info["prompt_tokens"]
+        total_completion_tokens += cost_info["completion_tokens"]
+        total_cost += cost_info["total_cost"]
         print(f"$ Cost topic claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
         print("=====Saving Topic Claims/Process Names to Be Verified=====")
@@ -205,7 +223,7 @@ def GeneAgent(ID, genes, llm, dataset_name):
         for claim in claims_topic:
             if not re.match(pattern, claim):
                 claim = re.sub(r'[^a-zA-Z0-9,.;?!*()_-]+$', "_", claim)
-            claim_result = agentphd.inference(claim)
+            claim_result = agentphd.inference(llm, claim)
             verification_topic += f"Original_claim:{claim}"
             verification_topic += f"Verified_claim:{claim_result}"
             with open(topic_file,"a") as f_claim:
@@ -226,7 +244,10 @@ def GeneAgent(ID, genes, llm, dataset_name):
             temperature=0,
         )
         messages.append(updated_topic_resp.choices[0].message)
-        cost_info = record_chat_completion_cost(updated_topic_resp, llm, tag="updated_topic")
+        cost_info = record_chat_completion_cost(updated_topic_resp, llm, tag=f"{dataset_name}_updated_topic")
+        total_prompt_tokens += cost_info["prompt_tokens"]
+        total_completion_tokens += cost_info["completion_tokens"]
+        total_cost += cost_info["total_cost"]
         print(f"$ Cost updated topic: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         updated_topic = updated_topic_resp.choices[0].message.content 
         # print("=====Updated Topic=====")
@@ -246,7 +267,10 @@ def GeneAgent(ID, genes, llm, dataset_name):
             messages=analysis_message,
             temperature=0,
         )
-        cost_info = record_chat_completion_cost(claims_analysis_resp, llm, tag="claims_analysis")
+        cost_info = record_chat_completion_cost(claims_analysis_resp, llm, tag=f"{dataset_name}_claims_analysis")
+        total_prompt_tokens += cost_info["prompt_tokens"]
+        total_completion_tokens += cost_info["completion_tokens"]
+        total_cost += cost_info["total_cost"]
         print(f"$ Cost analysis claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         claims_analysis = json.loads(claims_analysis_resp.choices[0].message.content)
 
@@ -262,10 +286,10 @@ def GeneAgent(ID, genes, llm, dataset_name):
         for claim in claims_analysis:
             if not re.match(pattern, claim):
                 claim = re.sub(r'[^a-zA-Z0-9,.;?!*()_-]+$', "_", claim)
-            claim_result = agentphd.inference(str(claim))
+            claim_result = agentphd.inference(llm, str(claim))
             verification_analysis += f"Original_claim:{claim}"
             verification_analysis += f"Verified_claim:{claim_result}"
-            with open(analysis_file,"a") as f_claim:
+            with open(analysis_file, "a") as f_claim:
                 f_claim.write(str(claim)+"\n")
                 f_claim.write(str(claim_result)+"\n")
                 f_claim.write("&&\n")
@@ -283,7 +307,10 @@ def GeneAgent(ID, genes, llm, dataset_name):
             messages=messages,
             temperature=0,
         )
-        cost_info = record_chat_completion_cost(updated_resp, llm, tag="final_update")
+        cost_info = record_chat_completion_cost(updated_resp, llm, tag=f"{dataset_name}_final_update")
+        total_prompt_tokens += cost_info["prompt_tokens"]
+        total_completion_tokens += cost_info["completion_tokens"]
+        total_cost += cost_info["total_cost"]
         print(f"$ Cost final update: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         update = updated_resp.choices[0].message.content
 
@@ -293,6 +320,13 @@ def GeneAgent(ID, genes, llm, dataset_name):
         # print("====Final Update====")
         # print(update)
                 
+        # Write a totals line for this ID
+        totals_file = output_dir / "Usage_Totals.txt"
+        with open(totals_file, "a") as f_totals:
+            f_totals.write(f"{dataset_name}\t{ID}\t{total_prompt_tokens}\t{total_completion_tokens}\t{total_cost:.4f}\n")
+
+        print(f"=== Totals for {dataset_name} {ID}: in={total_prompt_tokens}, out={total_completion_tokens}, cost=${total_cost:.4f}")
+
         with open(analysis_file,"a") as f_claim:
             f_claim.write("////\n")
 
@@ -307,12 +341,33 @@ def GeneAgent(ID, genes, llm, dataset_name):
 
             
 if __name__ == "__main__":
-    llm = "gpt-4o"
+    llm = "gpt-oss:20b" # gpt-4o, gpt-3.5-turbo, gpt-oss:20b, 
+    # gene_sets_file = Path("Datasets/GeneOntology/GO_toy.csv").absolute()
+    # gene_sets_file = Path("Datasets/AlzKB/alzkb.csv").absolute()
     gene_sets_file = Path("Datasets/MsigDB/MsigDB_toy.csv").absolute()
-    # data = pd.read_csv("Datasets/AlzKB/gene_sets.csv", header=0, index_col=None)
+    dataset_name = gene_sets_file.stem
+
+    base_dir = Path(globals().get("__file__", "./_")).absolute().parent
+    output_dir = base_dir / "Outputs" / llm / dataset_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_cost = 0.0
+
+    # Remove output files 
+    baseline_file = output_dir / "Baseline_LLM_Responses.txt"
+    baseline_file.unlink(missing_ok=True)   # Python 3.8+
+    topic_file = output_dir / "Claims_and_Verification_Topic.txt"
+    topic_file.unlink(missing_ok=True)
+    analysis_file = output_dir / "Claims_and_Verification_Analytic_Narratives.txt"
+    analysis_file.unlink(missing_ok=True)
+    final_file = output_dir / "Final_Response_GeneAgent.txt"
+    final_file.unlink(missing_ok=True)
+    
     data = pd.read_csv(gene_sets_file, header=0, index_col=None)
     for ID, genes in zip(data["ID"], data["Genes"]):
-        GeneAgent(ID, genes, llm, gene_sets_file.stem)
+        GeneAgent(ID, genes, llm, dataset_name)
         
     print("===Finished!===")
     
