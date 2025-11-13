@@ -129,7 +129,7 @@ def calculate_semantic_similarity(reference: list, predictions: list, model, tok
             
             embeds = model(**encoded).last_hidden_state[:, 0, :]
             score = cos_sim(embeds[0], embeds[1])
-            scores.append(score.tolist()[0])
+            scores.append(score.item())
     
     return scores
 
@@ -320,12 +320,14 @@ def main():
                 print(f"  Number of predictions: {len(df_type)}")
                 for metric in metrics:
                     if metric in df_type.columns:
-                        mean_score = df_type[metric].mean()
-                        print(f"  {metric}: {mean_score:.4f}")
+                        print(f"  {metric} mean: {df_type[metric].mean():.4f}")
+
                 
                 if "semantic_similarity" in df_type.columns:
-                    mean_sem = df_type["semantic_similarity"].mean()
-                    print(f"  Semantic Similarity (MedCPT): {mean_sem:.4f}")
+                    print(f"  Semantic Similarity (MedCPT) avg: {df_type["semantic_similarity"].mean():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) std: {df_type["semantic_similarity"].std():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) min: {df_type["semantic_similarity"].min():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) max: {df_type["semantic_similarity"].max():.4f}")
         
         # Comparison
         if len(df_results[df_results["prediction_type"] == "full_set"]) > 0 and \
