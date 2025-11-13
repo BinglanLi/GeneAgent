@@ -8,14 +8,25 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 </p>
 
 # Requirement
-	python 3.11.0
-	openai >= 1.0
-	torch  1.13.0
-	numpy  1.26.3
-	pandas 2.1.4
-	requests  2.31.0 
-	requests-oauthlib  1.3.1
- 	seaborn 0.13.2
+- Python >= 3.11
+- See `pyproject.toml` for complete dependency list
+
+## Core Dependencies
+- `openai >= 1.0.0` - OpenAI API client
+- `langchain-core >= 0.1.0` - LangChain core functionality
+- `langchain-openai >= 0.1.0` - OpenAI integration for LangChain
+- `langchain-ollama >= 0.1.0` - Ollama integration for LangChain
+- `langgraph >= 0.1.0` - Workflow orchestration
+- `pydantic >= 2.0.0` - Data validation
+- `pandas >= 2.1.4` - Data manipulation
+- `numpy >= 1.26.3` - Numerical computing
+- `requests >= 2.31.0` - HTTP library
+- `tiktoken >= 0.11.0` - Token counting
+- `python-dotenv >= 1.0.0` - Environment variable management
+
+## Optional Dependencies
+- `langchain-anthropic >= 0.1.0` - For Anthropic Claude models
+- `langchain-aws >= 0.1.0` - For AWS Bedrock models
 
 # Datasets
 - Gene Ontology: contain 1000 gene sets from the GO:BP branch of the gene ontology database
@@ -28,45 +39,75 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 
 # Configuration:
 ## Installation 
-1. Apply an OpenAI Key from the Azure OpenAI service to activate the access of LLMs, e.g., GPT-4.
+
+### Method 1: Install from pyproject.toml (Recommended)
+
+1. Clone the repository:
+   ```bash
+   git clone git@github.com:ncbi-nlp/GeneAgent.git
+   cd GeneAgent
+   ```
+
+2. Create a virtual environment:
+   ```bash
+   conda create -n geneagent python=3.11
+   conda activate geneagent
+   ```
+   Or using venv:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install the package and dependencies:
+   ```bash
+   pip install -e .
+   ```
+
+4. (Optional) Install with additional LLM provider support:
+   ```bash
+   # For Anthropic Claude models
+   pip install -e ".[anthropic]"
    
-   OpenAI Documentation: https://learn.microsoft.com/en-us/azure/ai-services/
-
- 2. Create a virtual environment on your GPU terminate by using the anaconda command:
-    ```
-    conda create -n {envname} python=3.11
-    ```
-  4. Activate the environment by using the command:
-     ```
-     conda activate {envname}
-     ```
-   5. Install the required packages one by one with the command:
-      ```
-      python install {package} == {version}
-      ```
-      
-## Download 
-1. Create a directory for GeneAgent in your own workplace
- 2. Download this respoisit directly to your directory or git the respoisit by:
-    ```
-    git@github.com:ncbi-nlp/GeneAgent.git
-    ```
-## Configure OpenAI credentials
-1. Go to the created directory of GeneAgent
+   # For AWS Bedrock models
+   pip install -e ".[bedrock]"
+   
+   # For all optional providers
+   pip install -e ".[all]"
    ```
-   cd {directory}
-   ```
-2. Set environment variables (recommended). For Public OpenAI:
-   - OPENAI_API_KEY
 
-   For Azure OpenAI (optional):
-   - AZURE_OPENAI_API_KEY
-   - AZURE_OPENAI_ENDPOINT
-   - AZURE_OPENAI_API_VERSION
+### Method 2: Manual Installation
 
-   The code auto-detects Azure settings if provided; otherwise it uses the public OpenAI API.
-  >[!TIP]
-   >If you run variants such as **main_CoT.py** or **main_summary.py**, the same environment variables apply; no code edits are needed.
+If you prefer to install dependencies manually, see `pyproject.toml` for the complete list of required packages.
+
+## Configure LLM Credentials
+
+Before running GeneAgent, you need to configure your LLM provider credentials.
+
+1. Set environment variables (recommended): 
+
+   **For Public OpenAI:**
+   - `OPENAI_API_KEY`
+
+   **For Azure OpenAI (optional):**
+   - `AZURE_OPENAI_API_KEY`
+   - `AZURE_OPENAI_ENDPOINT`
+   - `AZURE_OPENAI_API_VERSION`
+   - Use model names with `azure-` prefix (e.g., `azure-gpt-4`)
+
+   **For Ollama (optional):**
+   - Ollama must be running locally on `http://localhost:11434`
+   - Use model names containing `gpt-oss` (e.g., `gpt-oss:20b`)
+
+   The code automatically detects the provider based on the model name:
+- Models starting with `gpt-` or `o1-` → OpenAI API
+- Models starting with `azure-` → Azure OpenAI
+- Models containing `gpt-oss` → Ollama (OpenAI-compatible endpoint)
+- Models starting with `claude-` → Anthropic (via BaseAgent)
+- Other models → Auto-detected by BaseAgent
+   
+   >[!NOTE]
+   >GeneAgent now uses BaseAgent's unified LLM infrastructure (`llm_utils.py`), which provides support for multiple LLM providers (OpenAI, Azure OpenAI, Ollama, etc.) through a single interface.
 
 # Execute
 ## Running
@@ -75,8 +116,16 @@ Type following command in your virtual environment.
 python main_cascade.py
 ```
 The results will be stored accordingly.
+
+## Architecture
+GeneAgent uses a unified LLM infrastructure built on BaseAgent:
+- **`llm_utils.py`**: Unified LLM client supporting multiple providers (OpenAI, Azure, Ollama)
+- **`main_cascade.py`**: Main cascade workflow for gene set analysis
+- **`worker.py`**: AgentPhD class for claim verification using function calling
+- **`apis/`**: Domain-specific API functions for biological databases
+
  >[!TIP]
-  >If you want to evaluate your own gene sets, save them to **Dataset** directory and change the directory path in the **main_cascade.py**
+  >If you want to evaluate your own gene sets, save them to **Datasets** directory and change the directory path in **main_cascade.py**
 >Also, the output path can be changed according to your preference.
 
 ## Example outputs

@@ -2,44 +2,18 @@ import json
 import re
 import pandas as pd
 import os
-
+import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from openai import OpenAI
-try:
-    from openai import AzureOpenAI
-except Exception:
-    AzureOpenAI = None
-from costs import record_chat_completion_cost
+
+# Use unified LLM utility module
+from llm_utils import get_llm_client
+from costs import estimate_cost, record_chat_completion_cost
 
 load_dotenv()
 
-def _create_openai_client():
-    target_api = os.getenv("TARGET_API")
-    if target_api == "azure":
-        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
-        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
-        if azure_endpoint and azure_api_key and azure_api_version and AzureOpenAI is not None:
-            return AzureOpenAI(
-                azure_endpoint=azure_endpoint,
-                api_key=azure_api_key,
-                api_version=azure_api_version,
-            )
-    if target_api == "ollama":
-        return OpenAI(
-            base_url="http://localhost:11434/v1",  # Local Ollama API
-            api_key="ollama",
-        )
-    return OpenAI()
-
-client = _create_openai_client()
-
 from worker import AgentPhD
 
-import tiktoken
-MAX_TOKENS = 127900
- 
 
 ## baseline 
 system = "You are an efficient and insightful assistant to a molecular biologist."
@@ -127,28 +101,139 @@ reposits = [
     "get_pubmed_articles"
 ]
 
-
 agentphd = AgentPhD(function_names=reposits)
 
-def GeneAgent(ID, genes, llm, dataset_name):    
+
+def _track_usage_and_cost(usage_metrics, llm_model, resp, tag, total_prompt_tokens, total_completion_tokens, total_cost):
+    """
+    Helper function to track usage from BaseAgent's usage_metrics and calculate costs.
+    
+    Returns:
+        Tuple of (updated_total_prompt_tokens, updated_total_completion_tokens, updated_total_cost, cost_info_dict)
+    """
+    input_tokens = usage_metrics.input_tokens if usage_metrics and usage_metrics.input_tokens else 0
+    output_tokens = usage_metrics.output_tokens if usage_metrics and usage_metrics.output_tokens else 0
+    cost_info = estimate_cost(llm_model, input_tokens, output_tokens)
+    record_chat_completion_cost(resp, llm_model, tag=tag)
+    
+    total_prompt_tokens += cost_info["prompt_tokens"]
+    total_completion_tokens += cost_info["completion_tokens"]
+    total_cost += cost_info["total_cost"]
+    
+    return total_prompt_tokens, total_completion_tokens, total_cost, cost_info
+
+
+def extract_process_name(summary: str) -> str:
+    """Extract process name from summary, handling various formats."""
+    # Try to find "Process: <name>" pattern
+    process_match = re.search(r'Process:\s*(.+?)(?:\n|$)', summary, re.IGNORECASE)
+    if process_match:
+        return process_match.group(1).strip()
+    
+    # Fallback: try first line if it looks like a process name
+    first_line = summary.split("\n")[0].strip()
+    if first_line and len(first_line) < 200:  # Reasonable process name length
+        return first_line
+    
+    # Last resort: return first 50 chars
+    return summary[:50].strip()
+
+
+def load_dataset(file_path: Path, id_column: str = None, genes_column: str = None):
+    """
+    Load dataset from CSV or TSV file with flexible column detection.
+    
+    Args:
+        file_path: Path to the dataset file
+        id_column: Name of ID column (auto-detected if None)
+        genes_column: Name of genes column (auto-detected if None)
+    
+    Returns:
+        DataFrame with standardized 'ID' and 'Genes' columns
+    """
+    # Detect file format
+    if file_path.suffix.lower() == '.tsv':
+        df = pd.read_csv(file_path, sep='\t', header=0)
+    else:
+        df = pd.read_csv(file_path, header=0)
+    
+    # Auto-detect columns if not specified
+    if id_column is None:
+        # Common ID column names
+        id_candidates = ['ID', 'id', 'NEST ID', 'GeneSet_ID', 'geneSet_ID']
+        id_column = next((col for col in id_candidates if col in df.columns), df.columns[0])
+    
+    if genes_column is None:
+        # Common genes column names
+        genes_candidates = ['Genes', 'genes', 'Gene', 'gene', 'Gene_Set', 'gene_set']
+        genes_column = next((col for col in genes_candidates if col in df.columns), None)
+        if genes_column is None:
+            raise ValueError(f"Could not find genes column. Available columns: {list(df.columns)}")
+    
+    # Standardize column names
+    df = df.rename(columns={id_column: 'ID', genes_column: 'Genes'})
+    
+    # Validate required columns exist
+    if 'ID' not in df.columns or 'Genes' not in df.columns:
+        raise ValueError(f"Required columns not found. Available: {list(df.columns)}")
+    
+    # Remove rows with missing data
+    df = df.dropna(subset=['ID', 'Genes'])
+    
+    return df[['ID', 'Genes']]
+
+
+def get_processed_ids(output_dir: Path) -> set:
+    """Get set of already processed IDs from output files."""
+    processed = set()
+    final_file = output_dir / "Final_Response_GeneAgent.txt"
+    
+    if final_file.exists():
+        with open(final_file, 'r') as f:
+            content = f.read()
+            # Extract IDs from the usage totals file if available
+            totals_file = output_dir / "Usage_Totals.txt"
+            if totals_file.exists():
+                with open(totals_file, 'r') as tf:
+                    for line in tf:
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 2:
+                            processed.add(parts[1])  # ID is second column
+    
+    return processed
+
+
+def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool = False):    
+    """
+    Run GeneAgent cascade workflow for a single gene set.
+    
+    Args:
+        ID: Identifier for the gene set
+        genes: Gene set string (comma-separated)
+        llm_model: LLM model name
+        dataset_name: Name of the dataset
+        output_dir: Output directory path
+        resume: If True, skip if already processed
+    """
     genes = genes.replace("/",",").replace(" ",",")
     
     pattern = re.compile(r'^[a-zA-Z0-9,.;?!*()_-]+$')
 
-    # Specify output dir
-    base_dir = Path(globals().get("__file__", "./_")).absolute().parent
-    output_dir = base_dir / "Outputs" / llm / dataset_name
+    # Check if already processed (for resume mode)
+    if resume:
+        processed_ids = get_processed_ids(output_dir)
+        if str(ID) in processed_ids:
+            print(f"Skipping {ID} (already processed)")
+            return
     
+    # Initialize LLM using unified utility
     try:
-        if llm == "gpt-oss:20b":
-            encoding = tiktoken.get_encoding("o200k_harmony")
-        if llm == "gpt-3.5-turbo":
-            encoding = tiktoken.encoding_for_model("cl100k_base")
-        if llm == "gpt-4o":
-            encoding = tiktoken.encoding_for_model(llm)
-    except KeyError:
-        print(f"Error: Cannot find the encoding for the model {llm}!")
-
+        llm_client = get_llm_client(llm_model)
+        print(f"Initialized LLM: {llm_model} (source: {llm_client.source})")
+    except Exception as e:
+        print(f"Error initializing LLM: {e}")
+        raise
+    
     ## send genes to GPT-4 and generate the original template of process name and analysis
     try:
         # Track total usage across steps
@@ -162,96 +247,82 @@ def GeneAgent(ID, genes, llm, dataset_name):
         final_file = output_dir / "Final_Response_GeneAgent.txt"
 
         # Obtain the baseline summary
-        print("=====Generating Baseline Summary=====")
+        print(f"=====Generating Baseline Summary for {ID}=====")
         prompt_baseline = baseline(genes)
-        first_step = prompt_baseline + system
-        token_baseline = encoding.encode(first_step)
-        print(f"=====The prompt tokens input to the generation step is {len(token_baseline)}=====\n")
         messages = [
             {"role":"system", "content":system},
             {"role":"user", "content":prompt_baseline}
         ]
-        summary_resp = client.chat.completions.create(
-            model=llm,
-            messages=messages,
-            temperature=0,
-        )
-        messages.append(summary_resp.choices[0].message)
+        
+        summary_resp, usage_metrics = llm_client.chat_completion(messages)
         summary = summary_resp.choices[0].message.content
-        cost_info = record_chat_completion_cost(summary_resp, llm, tag=f"{dataset_name}_baseline_summary")
-        total_prompt_tokens += cost_info["prompt_tokens"]
-        total_completion_tokens += cost_info["completion_tokens"]
-        total_cost += cost_info["total_cost"]
+        
+        # Track usage from BaseAgent's usage_metrics
+        total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
+            usage_metrics, llm_model, summary_resp, f"{dataset_name}_baseline_summary",
+            total_prompt_tokens, total_completion_tokens, total_cost
+        )
         print(f"$ Cost baseline: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
         print("=====Saving Baseline Summary=====")
         with open(baseline_file,"a") as f_summary:
+            f_summary.write(f"[{ID}]\n")
             f_summary.write(summary+"\n")
             f_summary.write("//\n")
-        # print("=====Summary=====")
-        # print(summary)
         
         # send genes and process name to GPT-4 for topic verification.
         print("=====Generating Topic Claims/Process Names to Be Verified=====")
-        process = summary.split("\n")[0].split("Process: ")[1]
+        process = extract_process_name(summary)
         prompt_topic = topic(genes, process) + topic_instruction
         message_topic = [
             {"role":"system", "content":system_verify},
             {"role":"user", "content":prompt_topic}
         ]
-        claims_topic_resp = client.chat.completions.create(
-            model=llm,
-            messages=message_topic,
-            temperature=0,
+        
+        claims_topic_resp, usage_metrics = llm_client.chat_completion(message_topic)
+        
+        # Track usage from BaseAgent's usage_metrics
+        total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
+            usage_metrics, llm_model, claims_topic_resp, f"{dataset_name}_claims_topic",
+            total_prompt_tokens, total_completion_tokens, total_cost
         )
-        cost_info = record_chat_completion_cost(claims_topic_resp, llm, tag=f"{dataset_name}_claims_topic")
-        total_prompt_tokens += cost_info["prompt_tokens"]
-        total_completion_tokens += cost_info["completion_tokens"]
-        total_cost += cost_info["total_cost"]
         print(f"$ Cost topic claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
         print("=====Saving Topic Claims/Process Names to Be Verified=====")
         claims_topic = json.loads(claims_topic_resp.choices[0].message.content)
         with open(topic_file,"a") as f_claim:
+            f_claim.write(f"[{ID}]\n")
             f_claim.write(str(claims_topic)+"\n")
             f_claim.write("&&\n")
-        # print("=====Topic Claim=====")
-        # print(claims_topic)
         
         print("=====Verifying Topic Claims/Process Names=====")
         verification_topic = ""
         for claim in claims_topic:
             if not re.match(pattern, claim):
                 claim = re.sub(r'[^a-zA-Z0-9,.;?!*()_-]+$', "_", claim)
-            claim_result = agentphd.inference(llm, claim)
+            claim_result = agentphd.inference(llm_model, claim)
             verification_topic += f"Original_claim:{claim}"
             verification_topic += f"Verified_claim:{claim_result}"
             with open(topic_file,"a") as f_claim:
                 f_claim.write(str(claim)+"\n")
                 f_claim.write(str(claim_result)+"\n")
                 f_claim.write("&&\n")
-            # print(claim)
-            # print(claim_result)
             
         print("=====Updating Topic Claims/Process Names Based on Verification=====")
         modification_prompt = modification(verification_topic) + modification_instruction
         messages.append(
             {"role":"user", "content": modification_prompt}
             )
-        updated_topic_resp = client.chat.completions.create(
-            model=llm,
-            messages=messages,
-            temperature=0,
+        updated_topic_resp, usage_metrics = llm_client.chat_completion(messages)
+        messages.append({"role":"assistant", "content": updated_topic_resp.choices[0].message.content})
+        
+        # Track usage from BaseAgent's usage_metrics
+        total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
+            usage_metrics, llm_model, updated_topic_resp, f"{dataset_name}_updated_topic",
+            total_prompt_tokens, total_completion_tokens, total_cost
         )
-        messages.append(updated_topic_resp.choices[0].message)
-        cost_info = record_chat_completion_cost(updated_topic_resp, llm, tag=f"{dataset_name}_updated_topic")
-        total_prompt_tokens += cost_info["prompt_tokens"]
-        total_completion_tokens += cost_info["completion_tokens"]
-        total_cost += cost_info["total_cost"]
         print(f"$ Cost updated topic: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         updated_topic = updated_topic_resp.choices[0].message.content 
-        # print("=====Updated Topic=====")
-        # print(updated_topic)
         
         print("=====Generating Analysis Claims/Analytic Narratives to Be Verified=====")
         if not re.match(pattern, str(updated_topic)):
@@ -262,63 +333,55 @@ def GeneAgent(ID, genes, llm, dataset_name):
             {"role":"system", "content":system_verify},
             {"role":"user", "content":prompt_analysis}
         ]
-        claims_analysis_resp = client.chat.completions.create(
-            model=llm,
-            messages=analysis_message,
-            temperature=0,
+        claims_analysis_resp, usage_metrics = llm_client.chat_completion(analysis_message)
+        
+        # Track usage from BaseAgent's usage_metrics
+        total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
+            usage_metrics, llm_model, claims_analysis_resp, f"{dataset_name}_claims_analysis",
+            total_prompt_tokens, total_completion_tokens, total_cost
         )
-        cost_info = record_chat_completion_cost(claims_analysis_resp, llm, tag=f"{dataset_name}_claims_analysis")
-        total_prompt_tokens += cost_info["prompt_tokens"]
-        total_completion_tokens += cost_info["completion_tokens"]
-        total_cost += cost_info["total_cost"]
         print(f"$ Cost analysis claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         claims_analysis = json.loads(claims_analysis_resp.choices[0].message.content)
 
         print("=====Saving Analysis Claims/Analytic Narratives to Be Verified=====")
         with open(analysis_file,"a") as f_claim:
+            f_claim.write(f"[{ID}]\n")
             f_claim.write(str(claims_analysis)+"\n")
             f_claim.write("&&\n")
-        # print("=====Analysis Claim=====")
-        # print(claims_analysis)
         
         print("=====Verifying Analysis Claims/Analytic Narratives=====")
         verification_analysis = ""
         for claim in claims_analysis:
             if not re.match(pattern, claim):
                 claim = re.sub(r'[^a-zA-Z0-9,.;?!*()_-]+$', "_", claim)
-            claim_result = agentphd.inference(llm, str(claim))
+            claim_result = agentphd.inference(llm_model, str(claim))
             verification_analysis += f"Original_claim:{claim}"
             verification_analysis += f"Verified_claim:{claim_result}"
             with open(analysis_file, "a") as f_claim:
                 f_claim.write(str(claim)+"\n")
                 f_claim.write(str(claim_result)+"\n")
                 f_claim.write("&&\n")
-            # print(claim)
-            # print(claim_result)
             
         ## send verificaton report to LLMs and modify the gene analysis
         print("=====Updating Analysis Claims/Analytic Narratives Based on Verification=====")
         summarization_prompt = summarization(verification_analysis) + summarization_instruction
         messages.append(
-            {"role":"assistant", "content":summarization_prompt }
+            {"role":"user", "content":summarization_prompt }
         )
-        updated_resp = client.chat.completions.create(
-            model=llm,
-            messages=messages,
-            temperature=0,
+        updated_resp, usage_metrics = llm_client.chat_completion(messages)
+        
+        # Track usage from BaseAgent's usage_metrics
+        total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
+            usage_metrics, llm_model, updated_resp, f"{dataset_name}_final_update",
+            total_prompt_tokens, total_completion_tokens, total_cost
         )
-        cost_info = record_chat_completion_cost(updated_resp, llm, tag=f"{dataset_name}_final_update")
-        total_prompt_tokens += cost_info["prompt_tokens"]
-        total_completion_tokens += cost_info["completion_tokens"]
-        total_cost += cost_info["total_cost"]
         print(f"$ Cost final update: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
         update = updated_resp.choices[0].message.content
 
         with open(final_file,"a") as f_final:
+            f_final.write(f"[{ID}]\n")
             f_final.write(update+"\n")
             f_final.write("//\n")
-        # print("====Final Update====")
-        # print(update)
                 
         # Write a totals line for this ID
         totals_file = output_dir / "Usage_Totals.txt"
@@ -332,42 +395,161 @@ def GeneAgent(ID, genes, llm, dataset_name):
 
     except Exception as E:
         error_file = output_dir / "Error_Report.txt"
-        with open(error_file,"w") as f_final:
-            f_final.write(ID + "\t")
+        with open(error_file,"a") as f_final:
+            f_final.write(f"{ID}\t")
             f_final.write(f"====There are an error {E} here.====\n")
             f_final.write("//\n")
                 
-        print(f"====There are an error {E} here.====")       
+        print(f"====There are an error {E} here.====")
+        raise  # Re-raise to allow caller to handle
 
-            
-if __name__ == "__main__":
-    llm = "gpt-oss:20b" # gpt-4o, gpt-3.5-turbo, gpt-oss:20b, 
-    # gene_sets_file = Path("Datasets/GeneOntology/GO_toy.csv").absolute()
-    # gene_sets_file = Path("Datasets/AlzKB/alzkb.csv").absolute()
-    gene_sets_file = Path("Datasets/MsigDB/MsigDB_toy.csv").absolute()
-    dataset_name = gene_sets_file.stem
 
-    base_dir = Path(globals().get("__file__", "./_")).absolute().parent
-    output_dir = base_dir / "Outputs" / llm / dataset_name
+def main():
+    parser = argparse.ArgumentParser(
+        description="GeneAgent: Self-verification Language Agent for Gene Set Analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic usage
+  python main_cascade.py --input Datasets/MsigDB/MsigDB_toy.csv --llm gpt-4o
+  
+  # With custom output directory
+  python main_cascade.py --input Datasets/GO/GO_toy.csv --llm gpt-4o --output ./results
+  
+  # Resume from previous run
+  python main_cascade.py --input Datasets/MsigDB/MsigDB_toy.csv --llm gpt-4o --resume
+  
+  # TSV file with custom columns
+  python main_cascade.py --input Datasets/NeST/NeST_toy.tsv --id-column "NEST ID" --genes-column "Genes" --llm gpt-4o
+        """
+    )
+    
+    parser.add_argument(
+        '--input', '-i',
+        type=str,
+        required=True,
+        help='Path to input dataset file (CSV or TSV)'
+    )
+    
+    parser.add_argument(
+        '--llm', '-l',
+        type=str,
+        default='gpt-4o',
+        help='LLM model name (default: gpt-4o). Options: gpt-5,gpt-4o, azure-gpt-4o, gpt-oss:20b'
+    )
+    
+    parser.add_argument(
+        '--output', '-o',
+        type=str,
+        default=None,
+        help='Output directory (default: Outputs/{llm}/{dataset_name})'
+    )
+    
+    parser.add_argument(
+        '--id-column',
+        type=str,
+        default=None,
+        help='Name of ID column (auto-detected if not specified)'
+    )
+    
+    parser.add_argument(
+        '--genes-column',
+        type=str,
+        default=None,
+        help='Name of genes column (auto-detected if not specified)'
+    )
+    
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        help='Resume processing, skipping already processed gene sets'
+    )
+    
+    parser.add_argument(
+        '--clear-output',
+        action='store_true',
+        help='Clear existing output files before starting'
+    )
+    
+    parser.add_argument(
+        '--limit',
+        type=int,
+        default=None,
+        help='Limit number of gene sets to process (for testing)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Resolve paths
+    input_file = Path(args.input).resolve()
+    if not input_file.exists():
+        raise FileNotFoundError(f"Input file not found: {input_file}")
+    
+    dataset_name = input_file.stem
+    
+    # Set up output directory
+    if args.output:
+        output_dir = Path(args.output).resolve()
+    else:
+        base_dir = Path(__file__).absolute().parent
+        output_dir = base_dir / "Outputs" / args.llm / dataset_name
+    
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    total_cost = 0.0
-
-    # Remove output files 
-    baseline_file = output_dir / "Baseline_LLM_Responses.txt"
-    baseline_file.unlink(missing_ok=True)   # Python 3.8+
-    topic_file = output_dir / "Claims_and_Verification_Topic.txt"
-    topic_file.unlink(missing_ok=True)
-    analysis_file = output_dir / "Claims_and_Verification_Analytic_Narratives.txt"
-    analysis_file.unlink(missing_ok=True)
-    final_file = output_dir / "Final_Response_GeneAgent.txt"
-    final_file.unlink(missing_ok=True)
     
-    data = pd.read_csv(gene_sets_file, header=0, index_col=None)
-    for ID, genes in zip(data["ID"], data["Genes"]):
-        GeneAgent(ID, genes, llm, dataset_name)
+    # Clear output files if requested
+    if args.clear_output and not args.resume:
+        output_files = [
+            output_dir / "Baseline_LLM_Responses.txt",
+            output_dir / "Claims_and_Verification_Topic.txt",
+            output_dir / "Claims_and_Verification_Analytic_Narratives.txt",
+            output_dir / "Final_Response_GeneAgent.txt",
+            output_dir / "Usage_Totals.txt",
+            output_dir / "Error_Report.txt",
+        ]
+        for f in output_files:
+            f.unlink(missing_ok=True)
+        print("Cleared existing output files")
+    
+    # Load dataset
+    print(f"Loading dataset from: {input_file}")
+    try:
+        df = load_dataset(input_file, args.id_column, args.genes_column)
+        print(f"Loaded {len(df)} gene sets")
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
+        raise
+    
+    # Limit if specified
+    if args.limit:
+        df = df.head(args.limit)
+        print(f"Limited to {len(df)} gene sets for processing")
+    
+    # Process each gene set
+    total = len(df)
+    for idx, (_, row) in enumerate(df.iterrows(), 1):
+        ID = row['ID']
+        genes = row['Genes']
         
-    print("===Finished!===")
-    
+        print(f"\n{'='*60}")
+        print(f"Processing {idx}/{total}: {ID}")
+        print(f"{'='*60}")
+        
+        try:
+            GeneAgent(ID, genes, args.llm, dataset_name, output_dir, resume=args.resume)
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user. Exiting...")
+            break
+        except Exception as e:
+            print(f"Error processing {ID}: {e}")
+            if not args.resume:
+                # In non-resume mode, continue with next item
+                continue
+            else:
+                # In resume mode, stop on error to allow fixing
+                raise
+        
+    print("\n===Finished!===")
+
+
+if __name__ == "__main__":
+    main()
