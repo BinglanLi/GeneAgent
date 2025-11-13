@@ -3,7 +3,7 @@ name = "geneagent"
 version = "0.1.0"
 description = "Self-verification Language Agent for Gene Set Analysis using Domain Databases"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "python-dotenv>=1.0.0",
     "gensim>=4.3.2",
@@ -24,6 +24,9 @@ dependencies = [
     "langchain-ollama>=0.1.0",
     "langgraph>=0.1.0",
     "pydantic>=2.0.0",
+    "rouge-score>=0.1.2",
+    # BaseAgent - installed from GitHub
+    "baseagent",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +36,6 @@ all = [
     "langchain-anthropic>=0.1.0",
     "langchain-aws>=0.1.0",
 ]
+
+[tool.uv.sources]
+baseagent = { git = "https://github.com/BinglanLi/BaseAgent.git" }

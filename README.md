@@ -8,10 +8,11 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 </p>
 
 # Requirement
-- Python >= 3.11
+- Python >= 3.12
 - See `pyproject.toml` for complete dependency list
 
 ## Core Dependencies
+- `baseagent` - Agent framework (installed from https://github.com/BinglanLi/BaseAgent)
 - `openai >= 1.0.0` - OpenAI API client
 - `langchain-core >= 0.1.0` - LangChain core functionality
 - `langchain-openai >= 0.1.0` - OpenAI integration for LangChain
@@ -40,7 +41,37 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 # Configuration:
 ## Installation 
 
-### Method 1: Install from pyproject.toml (Recommended)
+### Method 1: Using UV (Recommended)
+
+1. Clone the repository:
+   ```bash
+   git clone git@github.com:ncbi-nlp/GeneAgent.git
+   cd GeneAgent
+   ```
+
+2. Install uv if you haven't already:
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+3. Create environment and install all dependencies (including BaseAgent from GitHub):
+   ```bash
+   uv sync
+   ```
+
+4. Activate the environment:
+   ```bash
+   source .venv/bin/activate
+   ```
+
+5. (Optional) Install with additional LLM provider support:
+   ```bash
+   uv sync --extra anthropic  # For Anthropic Claude models
+   uv sync --extra bedrock    # For AWS Bedrock models
+   uv sync --extra all        # For all optional providers
+   ```
+
+### Method 2: Using pip
 
 1. Clone the repository:
    ```bash
@@ -50,35 +81,32 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 
 2. Create a virtual environment:
    ```bash
-   conda create -n geneagent python=3.11
-   conda activate geneagent
-   ```
-   Or using venv:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
-3. Install the package and dependencies:
+3. Install dependencies:
    ```bash
-   pip install -e .
+   pip install -r requirements.txt  # If available
+   # Or install from pyproject.toml
+   pip install .
    ```
 
 4. (Optional) Install with additional LLM provider support:
    ```bash
    # For Anthropic Claude models
-   pip install -e ".[anthropic]"
+   pip install ".[anthropic]"
    
    # For AWS Bedrock models
-   pip install -e ".[bedrock]"
+   pip install ".[bedrock]"
    
    # For all optional providers
-   pip install -e ".[all]"
+   pip install ".[all]"
    ```
 
-### Method 2: Manual Installation
+### Note on BaseAgent
 
-If you prefer to install dependencies manually, see `pyproject.toml` for the complete list of required packages.
+BaseAgent is automatically installed from https://github.com/BinglanLi/BaseAgent as specified in `pyproject.toml`. The installation will fetch the latest version from GitHub.
 
 ## Configure LLM Credentials
 

@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Use unified LLM utility module
+# Use LLM utility module (refactored to use BaseAgent directly)
 from llm_utils import get_llm_client
-from costs import estimate_cost, record_chat_completion_cost
+from costs import record_chat_completion_cost
 
 load_dotenv()
 
@@ -104,23 +104,123 @@ reposits = [
 agentphd = AgentPhD(function_names=reposits)
 
 
-def _track_usage_and_cost(usage_metrics, llm_model, resp, tag, total_prompt_tokens, total_completion_tokens, total_cost):
+def _track_usage_and_cost(usage_metrics, llm_model, tag, total_prompt_tokens, total_completion_tokens, total_cost):
     """
     Helper function to track usage from BaseAgent's usage_metrics and calculate costs.
+    
+    Args:
+        usage_metrics: UsageMetrics object from BaseAgent
+        llm_model: Model name
+        tag: Tag for cost tracking
+        total_prompt_tokens, total_completion_tokens, total_cost: Running totals
     
     Returns:
         Tuple of (updated_total_prompt_tokens, updated_total_completion_tokens, updated_total_cost, cost_info_dict)
     """
     input_tokens = usage_metrics.input_tokens if usage_metrics and usage_metrics.input_tokens else 0
     output_tokens = usage_metrics.output_tokens if usage_metrics and usage_metrics.output_tokens else 0
-    cost_info = estimate_cost(llm_model, input_tokens, output_tokens)
-    record_chat_completion_cost(resp, llm_model, tag=tag)
+    
+    # Convert UsageMetrics to dict format
+    usage_dict = {
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'total_tokens': usage_metrics.total_tokens if usage_metrics and usage_metrics.total_tokens else (input_tokens + output_tokens)
+    }
+    
+    # Record costs directly with usage_dict
+    cost_info = record_chat_completion_cost(model=llm_model, tag=tag, usage_dict=usage_dict)
     
     total_prompt_tokens += cost_info["prompt_tokens"]
     total_completion_tokens += cost_info["completion_tokens"]
     total_cost += cost_info["total_cost"]
     
     return total_prompt_tokens, total_completion_tokens, total_cost, cost_info
+
+
+def extract_json_list(content: str) -> list:
+    """
+    Extract a list from LLM response, handling various formats.
+    
+    Handles:
+    - Pure JSON: ["item1", "item2"]
+    - Markdown code blocks: ```json ["item1"] ```
+    - Bulleted lists: * item1\n* item2 or - item1\n- item2
+    - Numbered lists: 1. item1\n2. item2
+    - Text with embedded JSON
+    """
+    # Try to parse as-is first (for well-behaved models like GPT-4)
+    try:
+        result = json.loads(content)
+        if isinstance(result, list):
+            return result
+        # If it's a dict or other type, wrap in list
+        return [result] if result else []
+    except json.JSONDecodeError:
+        pass
+    
+    # Try to extract JSON from markdown code blocks
+    code_block_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', content, re.DOTALL)
+    if code_block_match:
+        try:
+            result = json.loads(code_block_match.group(1))
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+    
+    # Try to find any JSON array in the content (not in code blocks)
+    json_array_match = re.search(r'\[(?:[^\[\]]|"[^"]*")*\]', content, re.DOTALL)
+    if json_array_match:
+        try:
+            result = json.loads(json_array_match.group(0))
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+    
+    # Handle bulleted/numbered lists (common with local models)
+    # Pattern: lines starting with *, -, •, or numbers like "1.", "2."
+    lines = content.split('\n')
+    list_items = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check if line starts with common bullet/number patterns
+        # Patterns: "* item", "- item", "• item", "1. item", "2) item"
+        match = re.match(r'^[\*\-•+][\s]+(.+)$', line) or \
+                re.match(r'^\d+[\.\)]\s+(.+)$', line)
+        
+        if match:
+            claim = match.group(1).strip()
+            if len(claim) > 5:  # Reasonable claim length
+                list_items.append(claim)
+    
+    if list_items:
+        return list_items
+    
+    # If we found no list items but have content, try extracting all non-empty lines
+    # that look like claims (longer than a header/intro line)
+    potential_claims = []
+    for line in lines:
+        line = line.strip()
+        # Skip common intro/header patterns
+        if line and len(line) > 20 and not any(skip in line.lower() for skip in [
+            'here are', 'following', 'claims:', 'verified:', 'decontextualized'
+        ]):
+            potential_claims.append(line)
+    
+    if potential_claims:
+        return potential_claims
+    
+    # Last resort: return the whole content as a single item if it's substantial
+    if content.strip() and len(content.strip()) > 10:
+        return [content.strip()]
+    
+    # Empty response
+    return []
 
 
 def extract_process_name(summary: str) -> str:
@@ -254,12 +354,11 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
             {"role":"user", "content":prompt_baseline}
         ]
         
-        summary_resp, usage_metrics = llm_client.chat_completion(messages)
-        summary = summary_resp.choices[0].message.content
+        summary, usage_metrics = llm_client.chat(messages)
         
         # Track usage from BaseAgent's usage_metrics
         total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
-            usage_metrics, llm_model, summary_resp, f"{dataset_name}_baseline_summary",
+            usage_metrics, llm_model, f"{dataset_name}_baseline_summary",
             total_prompt_tokens, total_completion_tokens, total_cost
         )
         print(f"$ Cost baseline: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
@@ -279,17 +378,18 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
             {"role":"user", "content":prompt_topic}
         ]
         
-        claims_topic_resp, usage_metrics = llm_client.chat_completion(message_topic)
+        claims_topic_content, usage_metrics = llm_client.chat(message_topic)
         
         # Track usage from BaseAgent's usage_metrics
         total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
-            usage_metrics, llm_model, claims_topic_resp, f"{dataset_name}_claims_topic",
+            usage_metrics, llm_model, f"{dataset_name}_claims_topic",
             total_prompt_tokens, total_completion_tokens, total_cost
         )
         print(f"$ Cost topic claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
         print("=====Saving Topic Claims/Process Names to Be Verified=====")
-        claims_topic = json.loads(claims_topic_resp.choices[0].message.content)
+        # claims_topic = json.loads(claims_topic_content)
+        claims_topic = extract_json_list(claims_topic_content)
         with open(topic_file,"a") as f_claim:
             f_claim.write(f"[{ID}]\n")
             f_claim.write(str(claims_topic)+"\n")
@@ -313,16 +413,15 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
         messages.append(
             {"role":"user", "content": modification_prompt}
             )
-        updated_topic_resp, usage_metrics = llm_client.chat_completion(messages)
-        messages.append({"role":"assistant", "content": updated_topic_resp.choices[0].message.content})
+        updated_topic, usage_metrics = llm_client.chat(messages)
+        messages.append({"role":"assistant", "content": updated_topic})
         
         # Track usage from BaseAgent's usage_metrics
         total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
-            usage_metrics, llm_model, updated_topic_resp, f"{dataset_name}_updated_topic",
+            usage_metrics, llm_model, f"{dataset_name}_updated_topic",
             total_prompt_tokens, total_completion_tokens, total_cost
         )
-        print(f"$ Cost updated topic: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
-        updated_topic = updated_topic_resp.choices[0].message.content 
+        print(f"$ Cost updated topic: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})") 
         
         print("=====Generating Analysis Claims/Analytic Narratives to Be Verified=====")
         if not re.match(pattern, str(updated_topic)):
@@ -333,15 +432,15 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
             {"role":"system", "content":system_verify},
             {"role":"user", "content":prompt_analysis}
         ]
-        claims_analysis_resp, usage_metrics = llm_client.chat_completion(analysis_message)
+        claims_analysis_content, usage_metrics = llm_client.chat(analysis_message)
         
         # Track usage from BaseAgent's usage_metrics
         total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
-            usage_metrics, llm_model, claims_analysis_resp, f"{dataset_name}_claims_analysis",
+            usage_metrics, llm_model, f"{dataset_name}_claims_analysis",
             total_prompt_tokens, total_completion_tokens, total_cost
         )
         print(f"$ Cost analysis claims: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
-        claims_analysis = json.loads(claims_analysis_resp.choices[0].message.content)
+        claims_analysis = extract_json_list(claims_analysis_content)
 
         print("=====Saving Analysis Claims/Analytic Narratives to Be Verified=====")
         with open(analysis_file,"a") as f_claim:
@@ -368,15 +467,14 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
         messages.append(
             {"role":"user", "content":summarization_prompt }
         )
-        updated_resp, usage_metrics = llm_client.chat_completion(messages)
+        update, usage_metrics = llm_client.chat(messages)
         
         # Track usage from BaseAgent's usage_metrics
         total_prompt_tokens, total_completion_tokens, total_cost, cost_info = _track_usage_and_cost(
-            usage_metrics, llm_model, updated_resp, f"{dataset_name}_final_update",
+            usage_metrics, llm_model, f"{dataset_name}_final_update",
             total_prompt_tokens, total_completion_tokens, total_cost
         )
         print(f"$ Cost final update: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
-        update = updated_resp.choices[0].message.content
 
         with open(final_file,"a") as f_final:
             f_final.write(f"[{ID}]\n")

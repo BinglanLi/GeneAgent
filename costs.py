@@ -7,8 +7,26 @@ from datetime import datetime
 #   OPENAI_PRICE_GPT_4O_INPUT=5.0
 #   OPENAI_PRICE_GPT_4O_OUTPUT=15.0
 PRICES_PER_MILLION = {
+    # GPT-4o family
     "gpt-4o": {"input": 2.5, "output": 10.0},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.6},
+    "azure-gpt-4o": {"input": 2.5, "output": 10.0},
+    
+    # GPT-4 family
+    "gpt-4": {"input": 30.0, "output": 60.0},
+    "gpt-4-turbo": {"input": 10.0, "output": 30.0},
+    "gpt-4-turbo-preview": {"input": 10.0, "output": 30.0},
+    
+    # GPT-3.5 family
     "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+    
+    # O1 family (reasoning models)
+    "o1-preview": {"input": 15.0, "output": 60.0},
+    "o1-mini": {"input": 3.0, "output": 12.0},
+    
+    # Local/Ollama models (approximate cost as zero for local inference)
+    "gpt-oss:20b": {"input": 0.0, "output": 0.0},
+    "llama3.2:3b": {"input": 0.0, "output": 0.0},
 }
 
 
@@ -48,14 +66,31 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> dic
     }
 
 
-def record_chat_completion_cost(resp, model: str, tag: str = "") -> dict:
+def record_chat_completion_cost(resp=None, model: str = None, tag: str = "", usage_dict: dict = None) -> dict:
     """
-    Extract usage from a v1 chat completion response and append to Outputs/costs.log.
+    Extract usage and append to Outputs/costs.log.
+    
+    Args:
+        resp: OpenAI response object (legacy support) or None
+        model: Model name (required)
+        tag: Tag for logging
+        usage_dict: Dictionary with 'input_tokens'/'output_tokens' or 'prompt_tokens'/'completion_tokens'
+    
     Returns the computed dict with tokens and costs for convenience.
     """
-    usage = getattr(resp, "usage", None)
-    prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
-    completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+    # Extract tokens from either usage_dict or response object
+    if usage_dict:
+        # Handle both naming conventions
+        prompt_tokens = usage_dict.get('prompt_tokens', usage_dict.get('input_tokens', 0))
+        completion_tokens = usage_dict.get('completion_tokens', usage_dict.get('output_tokens', 0))
+    elif resp:
+        usage = getattr(resp, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+    else:
+        prompt_tokens = 0
+        completion_tokens = 0
+    
     info = estimate_cost(model, prompt_tokens, completion_tokens)
 
     os.makedirs("Outputs", exist_ok=True)

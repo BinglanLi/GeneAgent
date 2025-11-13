@@ -2,11 +2,6 @@ import time
 import json
 import re
 
-import logging
-from logging.handlers import RotatingFileHandler
-from datetime import datetime
-
-# Use unified LLM utility module
 from llm_utils import get_llm_client
 from costs import record_chat_completion_cost
 
@@ -17,7 +12,6 @@ from apis.get_enrichment_for_gene_set import get_enrichment_for_gene_set, get_en
 from apis.get_pathway_for_gene_set import get_pathway_for_gene_set, get_pathway_for_gene_set_doc  
 from apis.get_interactions_for_gene_set import get_interactions_for_gene_set, get_interactions_for_gene_set_doc 
 from apis.get_gene_summary_for_single_gene import get_gene_summary_for_single_gene, get_gene_summary_for_single_gene_doc
- 
 from apis.get_pubmed_articles import get_pubmed_articles, get_pubmed_articles_doc
 
 func2info = {
@@ -33,7 +27,13 @@ func2info = {
 
 pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
 
+
 class AgentPhD:
+	"""
+	Agent for verifying gene-related claims using function calling.
+	Refactored to use SimpleLLMClient with BaseAgent infrastructure.
+	"""
+	
 	def __init__(self, function_names):
 		self.name2function = {function_name: func2info[function_name][0] for function_name in function_names}
 		self.function_docs = [func2info[function_name][1] for function_name in function_names]
@@ -41,9 +41,9 @@ class AgentPhD:
 	def inference(self, llm_model, claim):
 		"""
 		Verify a claim using function calling.
-		Uses unified LLM client that leverages BaseAgent's infrastructure.
+		Uses SimpleLLMClient that leverages BaseAgent's infrastructure.
 		"""
-		# Get unified LLM client
+		# Get LLM client
 		llm_client = get_llm_client(llm_model)
     
 		system = f"""
@@ -69,18 +69,19 @@ class AgentPhD:
 		loop = 0
 		while loop < 20:
 			loop += 1
-			# logger.info(f"Input@{loop}\n" +  json.dumps(messages, indent=4))
 			time.sleep(1)
 			
-			# Use unified LLM client with function calling support
-			completion, usage_metrics = llm_client.chat_completion_with_functions(
+			# Use function calling
+			completion, usage_dict = llm_client.chat_with_functions(
 				messages=message_verification,
 				functions=self.function_docs,
 				temperature=temperature,
 			)
 
 			message = completion.choices[0].message
-			cost_info = record_chat_completion_cost(completion, llm_model, tag="verification_loop")
+			
+			# Record costs directly with usage_dict
+			cost_info = record_chat_completion_cost(model=llm_model, tag="verification_loop", usage_dict=usage_dict)
 			print(f"$ Cost verification: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
 			# Handle both legacy function_call and new tool_calls
@@ -96,8 +97,7 @@ class AgentPhD:
 						'arguments': tool_call.function.arguments
 					})()
 					
-					# For gpt-5, we need to add the assistant message with tool_calls before the tool response
-					# Each API call returns a new assistant message, so we always add it
+					# For gpt-5, add the assistant message with tool_calls
 					assistant_msg = {
 						"role": "assistant",
 						"tool_calls": [
@@ -189,5 +189,4 @@ class AgentPhD:
 						}
 					)
 
-		return "Failed."	
-
+		return "Failed."
