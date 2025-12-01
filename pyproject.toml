@@ -3,7 +3,7 @@ name = "geneagent"
 version = "0.1.0"
 description = "Self-verification Language Agent for Gene Set Analysis using Domain Databases"
 readme = "README.md"
-requires-python = ">=3.12, <3.13"
+requires-python = ">=3.12"
 dependencies = [
     "python-dotenv>=1.0.0",
     "gensim>=4.3.2",
