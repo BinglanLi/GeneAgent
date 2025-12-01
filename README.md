@@ -75,7 +75,7 @@ GeneAgent is a first-of-kinds language agent built upon GPT-4 to automatically i
 
 1. Clone the repository:
    ```bash
-   git clone git@github.com:ncbi-nlp/GeneAgent.git
+   git clone git@github.com:BinglanLi/GeneAgent.git
    cd GeneAgent
    ```
 
