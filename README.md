@@ -126,6 +126,7 @@ Before running GeneAgent, you need to configure your LLM provider credentials.
    **For Ollama (optional):**
    - Ollama must be running locally on `http://localhost:11434`
    - Use model names containing `gpt-oss` (e.g., `gpt-oss:20b`)
+   - Special handling of the Ollama server is attached below.
 
    The code automatically detects the provider based on the model name:
 - Models starting with `gpt-` or `o1-` → OpenAI API
@@ -136,6 +137,164 @@ Before running GeneAgent, you need to configure your LLM provider credentials.
    
    >[!NOTE]
    >GeneAgent now uses BaseAgent's unified LLM infrastructure (`llm_utils.py`), which provides support for multiple LLM providers (OpenAI, Azure OpenAI, Ollama, etc.) through a single interface.
+
+## Set up Ollama on HPC
+
+1. Download and extract the Ollama Linux binary in a folder of your choice.
+   ```bash
+   # create the directory
+   mkdir -p ~/ollama
+   cd ~/ollama
+   # install
+   curl -L https://ollama.com/download/ollama-linux-amd64.tgz -o ollama-linux-amd64.tgz
+   # extract
+   tar -C ~/ollama -xzf ollama-linux-amd64.tgz
+   ```
+
+2. Configure the environment variables by adding the following lines in `~/.bashrc` or` ~/.zshrc`.
+   ```bash
+   # Add the binary to your PATH so you can type 'ollama' instead of the full path
+   export PATH=$HOME/ollama/bin:$PATH
+
+   # (Optional) Set a custom path for models if you want them somewhere specific
+   # If you skip this, they will default to ~/.ollama/models (which is fine for most users)
+   export OLLAMA_MODELS=$HOME/ollama/models
+   ```
+
+3. Run the Ollama server
+   ```bash
+   # & symbol runs the Ollama server in the background
+   ollama serve &
+   ```
+
+4. (Optional) Create a simple script to manage the Ollama server without `sudo`.
+   Create a new file named `ollama-manager.sh` with the following content under the `~/ollama/` folder. 
+   ```bash
+   #!/bin/bash
+
+   # --- CONFIGURATION ---
+   INSTALL_DIR="$HOME/ollama"
+   export OLLAMA_MODELS="$INSTALL_DIR/models"
+   export PATH="$INSTALL_DIR/bin:$PATH"
+
+   PID_FILE="$INSTALL_DIR/ollama.pid"
+   LOG_FILE="$INSTALL_DIR/server.log"
+   OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+   # ---------------------
+
+   # Helper: Check if a PID is actually an ollama process
+   is_ollama_running() {
+      local pid="$1"
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+         # Verify it's actually an ollama process, not a recycled PID
+         if ps -p "$pid" -o comm= 2>/dev/null | grep -q "ollama"; then
+               return 0
+         fi
+      fi
+      return 1
+   }
+
+   case "$1" in
+      start)
+         if [ -f "$PID_FILE" ]; then
+            OLD_PID=$(cat "$PID_FILE")
+            if is_ollama_running "$OLD_PID"; then
+               echo "Ollama is already running (PID: $OLD_PID)."
+               exit 0
+            else
+               echo "Removing stale PID file..."
+               rm -f "$PID_FILE"
+            fi
+         fi
+         
+         echo "Starting Ollama..."
+         nohup ollama serve > "$LOG_FILE" 2>&1 &
+         NEW_PID=$!
+         echo $NEW_PID > "$PID_FILE"
+         
+         # Wait briefly and verify it actually started
+         sleep 2
+         if is_ollama_running "$NEW_PID"; then
+            echo "Ollama started! (PID: $NEW_PID)"
+            echo "Logs are being written to: $LOG_FILE"
+         else
+            echo "ERROR: Ollama failed to start. Check logs: $LOG_FILE"
+            rm -f "$PID_FILE"
+            exit 1
+         fi
+         ;;
+      stop)
+         if [ -f "$PID_FILE" ]; then
+            PID=$(cat "$PID_FILE")
+            if is_ollama_running "$PID"; then
+               echo "Stopping Ollama (PID: $PID)..."
+               kill "$PID"
+               # Wait for graceful shutdown (up to 10 seconds)
+               for i in {1..10}; do
+                     if ! kill -0 "$PID" 2>/dev/null; then
+                        break
+                     fi
+                     sleep 1
+               done
+               # Force kill if still running
+               if kill -0 "$PID" 2>/dev/null; then
+                     echo "Force killing..."
+                     kill -9 "$PID" 2>/dev/null
+               fi
+               rm -f "$PID_FILE"
+               echo "Ollama stopped."
+            else
+               echo "PID file exists but process is not running. Cleaning up..."
+               rm -f "$PID_FILE"
+            fi
+         else
+            echo "Ollama is not running (no PID file)."
+            # Fallback cleanup
+            pkill -u "$USER" -x ollama 2>/dev/null && echo "Cleaned up stray ollama processes."
+         fi
+         ;;
+      restart)
+         "$0" stop
+         sleep 2
+         "$0" start
+         ;;
+      status)
+         if [ -f "$PID_FILE" ]; then
+            PID=$(cat "$PID_FILE")
+            if is_ollama_running "$PID"; then
+               echo "✅ Ollama is RUNNING (PID: $PID)"
+               # Optionally check if the server is responding
+               if curl -s --max-time 2 "http://${OLLAMA_HOST}/api/tags" >/dev/null 2>&1; then
+                     echo "   API is responding at http://${OLLAMA_HOST}"
+               else
+                     echo "   ⚠️  Process running but API not responding yet"
+               fi
+            else
+               echo "🔴 Ollama is STOPPED (stale PID file found)"
+               rm -f "$PID_FILE"
+            fi
+         else
+            echo "🔴 Ollama is STOPPED"
+         fi
+         ;;
+      *)
+         echo "Usage: $0 {start|stop|restart|status}"
+         exit 1
+         ;;
+   esac
+   ```
+
+   Make the file executable:
+   ```bash
+   chmod +x ~/ollama/ollama-manager.sh
+   ```
+
+   Use the file:
+   ```bash
+   ~/ollama/ollama-manager.sh start
+   ~/ollama/ollama-manager.sh status
+   ~/ollama/ollama-manager.sh stop
+   ```
 
 # Execute
 ## Running
