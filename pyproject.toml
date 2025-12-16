@@ -38,4 +38,4 @@ all = [
 ]
 
 [tool.uv.sources]
-baseagent = { git = "https://github.com/BinglanLi/BaseAgent.git" }
+baseagent = { git = "https://github.com/BinglanLi/BaseAgent.git@e548500877674ddd70ea8430eee559d12060cb40" }
