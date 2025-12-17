@@ -1,6 +1,6 @@
 # Pathway Evaluation Guide
 
-This guide explains how to evaluate GeneAgent predictions on the `selected_pathways_with_gene_sets2.csv` dataset, comparing predictions from `full_set` and `reduced_set` against ground truth `Pathway` names.
+This guide explains how to evaluate GeneAgent predictions on the `selected_pathways_with_descriptions.csv` dataset, comparing predictions from `full_set` and `reduced_set` against ground truth `Pathway` names.
 
 ## Overview
 
@@ -15,22 +15,37 @@ Use `run_pathway_evaluation.py` to process both gene sets:
 
 ```bash
 python run_pathway_evaluation.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
-    --limit 5  # Optional: limit for testing
+    -o /home/lib/GeneAgent/Outputs/azure-gpt-4o/ \
+    --limit 1  # Optional: limit for testing
+
+python run_pathway_evaluation.py \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
+    --llm azure-gpt-4o \
+    -o /home/lib/GeneAgent/Outputs/azure-gpt-4o/ \
+    --limit 1  # Optional: limit for testing
+
+~/ollama/ollama-manager.sh start
+python run_pathway_evaluation.py \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
+    --llm gpt-oss:20b \
+    -o /home/lib/GeneAgent/Outputs/azure-gpt-4o/ \
+    --limit 1  # Optional: limit for testing
+~/ollama/ollama-manager.sh stop
 ```
 
 ### Options:
-- `--input`: Path to the CSV file (default: `Datasets/AlzKB/selected_pathways_with_gene_sets2.csv`)
+- `--input`: Path to the CSV file (default: `Datasets/AlzKB/selected_pathways_with_descriptions.csv`)
 - `--llm`: LLM model name (default: `gpt-4o`)
-- `--output-base`: Base output directory (default: `Outputs/{llm}/selected_pathways_with_gene_sets2`)
+- `--output-base`: Base output directory (default: `Outputs/{llm}/{input_filename_stem}`)
 - `--skip-full`: Skip processing full_set if already done
 - `--skip-reduced`: Skip processing reduced_set if already done
 - `--limit`: Limit number of pathways to process (useful for testing)
 
 ### Output Structure:
 ```
-Outputs/{llm}/selected_pathways_with_gene_sets2/
+Outputs/{llm}/{input_filename_stem}/
 ├── full_set/
 │   ├── Final_Response_GeneAgent.txt
 │   ├── Baseline_LLM_Responses.txt
@@ -48,14 +63,14 @@ After running GeneAgent, evaluate the predictions:
 
 ```bash
 python evaluate_pathway_predictions.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o
 ```
 
 ### Options:
-- `--input`: Path to the CSV file with Pathway column (default: `Datasets/AlzKB/selected_pathways_with_gene_sets2.csv`)
+- `--input`: Path to the CSV file with Pathway column (default: `Datasets/AlzKB/selected_pathways_with_descriptions.csv`)
 - `--llm`: LLM model name used for predictions (default: `gpt-4o`)
-- `--output-base`: Base output directory (default: `Outputs/{llm}/selected_pathways_with_gene_sets2`)
+- `--output-base`: Base output directory (default: `Outputs/{llm}/{input_filename_stem}`)
 - `--output-file`: Custom output file for results (default: `{output_base}/evaluation_results.csv`)
 - `--skip-semantic`: Skip semantic similarity calculation (faster, but less complete)
 
@@ -76,23 +91,23 @@ The evaluation results CSV contains:
 ```bash
 # 1. Run GeneAgent on both gene sets (test with 3 pathways first)
 python run_pathway_evaluation.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     --limit 3
 
 # 2. Evaluate the predictions
 python evaluate_pathway_predictions.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o
 
 # 3. For full dataset (remove --limit)
 python run_pathway_evaluation.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o
 
 # 4. Evaluate full results
 python evaluate_pathway_predictions.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o
 ```
 
@@ -103,13 +118,13 @@ If processing was interrupted, you can resume:
 ```bash
 # Resume full_set (if it was already processed)
 python run_pathway_evaluation.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     --skip-full
 
 # Or resume reduced_set
 python run_pathway_evaluation.py \
-    --input Datasets/AlzKB/selected_pathways_with_gene_sets2.csv \
+    --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     --skip-reduced
 ```

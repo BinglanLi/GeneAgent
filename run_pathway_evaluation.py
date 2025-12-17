@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to run GeneAgent on full_set and reduced_set columns from selected_pathways_with_gene_sets2.csv
+Script to run GeneAgent on full_set and reduced_set columns from selected AlzKB pathways, e.g., selected_pathways_with_descriptions.csv
 and prepare for evaluation.
 """
 
@@ -108,10 +108,10 @@ def main():
     )
     
     parser.add_argument(
-        '--output-base', '-o',
+        '--output-dir', '-o',
         type=str,
         default=None,
-        help='Base output directory (default: Outputs/{llm}/selected_pathways_with_gene_sets2)'
+        help='Output directory (default: Outputs/{llm}/{dataset_name})'
     )
     
     parser.add_argument(
@@ -141,14 +141,15 @@ def main():
         raise FileNotFoundError(f"Input file not found: {input_file}")
     
     # Set up output directories
-    if args.output_base:
-        base_output = Path(args.output_base).resolve()
+    dataset_name = input_file.stem
+    if args.output_dir:
+        output_dir = Path(args.output_dir).resolve()
     else:
         base_dir = Path(__file__).absolute().parent
-        base_output = base_dir / "Outputs" / args.llm / "selected_pathways_with_gene_sets2"
+        output_dir = base_dir / "Outputs" / args.llm / dataset_name
     
-    full_output_dir = base_output / "full_set"
-    reduced_output_dir = base_output / "reduced_set"
+    full_output_dir = output_dir / "full_set"
+    reduced_output_dir = output_dir / "reduced_set"
     
     # Create temporary directory for prepared CSVs
     temp_dir = Path(tempfile.mkdtemp(prefix="pathway_eval_"))
@@ -184,7 +185,7 @@ def main():
             print("Skipping reduced_set processing")
         
         # Save reference file with Pathway names for evaluation
-        reference_file = base_output / "reference_pathways.csv"
+        reference_file = output_dir / "reference_pathways.csv"
         original_df[['Pathway']].to_csv(reference_file, index=False)
         print(f"\nSaved reference pathways to: {reference_file}")
         
