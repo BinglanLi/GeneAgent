@@ -1,6 +1,7 @@
 # Experiment files and outputs
 Outputs/
 Datasets/AlzKB/
+logs/
 
 .DS_Store
 __pycache__/
