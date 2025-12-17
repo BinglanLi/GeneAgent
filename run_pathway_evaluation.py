@@ -97,7 +97,6 @@ def main():
     parser.add_argument(
         '--input', '-i',
         type=str,
-        default='Datasets/AlzKB/selected_pathways_with_gene_sets2.csv',
         help='Path to input CSV file'
     )
     
