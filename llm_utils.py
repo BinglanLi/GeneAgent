@@ -34,7 +34,11 @@ class SimpleLLMClient:
     - Consistent behavior across all providers (with fallback to OpenAI client for legacy support)
     """
     
-    def __init__(self, llm_model: str):
+    def __init__(
+        self, 
+        llm_model: str,
+        temperature: float = 0,
+    ):
         """
         Initialize the LLM client.
         
@@ -44,7 +48,7 @@ class SimpleLLMClient:
         self.llm_model = llm_model
         self.source, self.llm = get_llm(
             model=llm_model,
-            temperature=0,
+            temperature=temperature,
             stop_sequences=None,
             source=None,  # Auto-detect
             config=default_config,
@@ -56,14 +60,12 @@ class SimpleLLMClient:
     def chat(
         self, 
         messages: list[dict],
-        temperature: float = 0,
     ) -> Tuple[str, Optional[UsageMetrics]]:
         """
         Simple chat completion using BaseAgent's LLM.
         
         Args:
             messages: List of message dicts in OpenAI format
-            temperature: Temperature for generation
         
         Returns:
             Tuple of (response_content, usage_metrics)
@@ -80,20 +82,8 @@ class SimpleLLMClient:
             elif role == "assistant":
                 lc_messages.append(AIMessage(content=content))
         
-        # If temperature is different from default, create a new LLM instance
-        if temperature != 0:
-            _, llm = get_llm(
-                model=self.llm_model,
-                temperature=temperature,
-                stop_sequences=None,
-                source=self.source,
-                config=default_config,
-            )
-        else:
-            llm = self.llm
-        
         # Invoke LLM
-        response = llm.invoke(lc_messages)
+        response = self.llm.invoke(lc_messages)
         
         # Extract usage metrics
         usage_metrics = extract_usage_metrics(
@@ -225,7 +215,10 @@ class SimpleLLMClient:
 _llm_clients: dict[str, SimpleLLMClient] = {}
 
 
-def get_llm_client(llm_model: str) -> SimpleLLMClient:
+def get_llm_client(
+    llm_model: str,
+    temperature: float = 0,
+    ) -> SimpleLLMClient:
     """
     Get or create a SimpleLLMClient instance for the given model.
     Uses caching to avoid recreating clients.
@@ -237,6 +230,6 @@ def get_llm_client(llm_model: str) -> SimpleLLMClient:
         SimpleLLMClient instance
     """
     if llm_model not in _llm_clients:
-        _llm_clients[llm_model] = SimpleLLMClient(llm_model)
+        _llm_clients[llm_model] = SimpleLLMClient(llm_model, temperature)
     return _llm_clients[llm_model]
 
