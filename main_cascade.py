@@ -488,10 +488,10 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
         error_file = output_dir / "Error_Report.txt"
         with open(error_file,"a") as f_final:
             f_final.write(f"{ID}\t")
-            f_final.write(f"====There are an error {E} here.====\n")
+            f_final.write(f"====There is an error {E} here.====\n")
             f_final.write("//\n")
                 
-        print(f"====There are an error {E} here.====")
+        print(f"====There is an error {E} here.====")
         raise  # Re-raise to allow caller to handle
 
 
