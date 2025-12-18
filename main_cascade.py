@@ -512,6 +512,10 @@ Examples:
 
   # TSV file with custom columns
   python main_cascade.py --input Datasets/NeST/NeST_toy.tsv --id-column "NEST ID" --genes-column "Genes" --llm gpt-4o
+
+  # Using Ollama with memory cleanup (prevents OOM crashes)
+  python main_cascade.py --input Datasets/MsigDB/MsigDB_toy.csv --llm gpt-oss:20b --cleanup-memory
+
         """
     )
     
@@ -568,7 +572,14 @@ Examples:
         default=None,
         help='Limit number of gene sets to process (for testing)'
     )
-    
+
+    parser.add_argument(
+        '--cleanup-memory',
+        action='store_true',
+        help='Unload Ollama model from memory after each gene set to prevent OOM errors'
+    )
+
+
     args = parser.parse_args()
     
     # Resolve paths
@@ -627,7 +638,12 @@ Examples:
         print(f"{'='*60}")
 
         try:
-            GeneAgent(ID, genes, args.llm, dataset_name, output_dir, resume=args.resume)
+            # In main_cascade.py after processing each gene set
+            llm_client = get_llm_client(args.llm)
+            GeneAgent(ID, genes, args.llm, dataset_name, output_dir)
+            # Cleanup memory after processing if requested
+            llm_client.cleanup_memory() 
+
         except KeyboardInterrupt:
             print("\n\nInterrupted by user. Exiting...")
             break
