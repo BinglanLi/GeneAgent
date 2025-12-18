@@ -40,26 +40,30 @@ class AgentPhD:
 
 	def inference(self, llm_model, claim):
 		"""
-		Verify a claim using function calling.
-		Uses SimpleLLMClient that leverages BaseAgent's infrastructure.
+		Verify a claim using tool calling via BaseAgent's LangChain infrastructure.
+
+		This method uses LangChain's native tool binding for consistent behavior
+		across all providers (OpenAI, Anthropic, Ollama, etc.).
 		"""
+		# Determine temperature based on model
+		temperature = 1.0 if llm_model.startswith("gpt-5") else 0
 		# Get LLM client
 		llm_client = get_llm_client(llm_model)
     
 		system = f"""
-  		You are a helpful fact-checker. 
-   		Your task is to verify the claim using the provided tools. 
+  		You are a helpful fact-checker.
+   		Your task is to verify the claim using the provided tools.
      	If there are evidences in your contents, please start a message with "Report:" and return your findings along with evidences.
     	"""
 		content = f"""
-  		Here is the claim needed to be verified:\n{claim} 
+  		Here is the claim needed to be verified:\n{claim}
 		Try to use multiple tools to verify a claim and the verification process should be factual and objective.
     	Put your decision at the beginning of the evidences.
     	Don't use any format symbols such as '*', '-' or other tokens.
     	"""
 		message_verification = [
 			{"role": "system", "content": system},
-			{"role": "user", "content": content} 
+			{"role": "user", "content": content}
 		]
 
 		# Determine temperature: gpt-5 requires temperature=1, others use 0
@@ -70,54 +74,39 @@ class AgentPhD:
 		while loop < 20:
 			loop += 1
 			time.sleep(1)
-			
-			# Use function calling
-			completion, usage_dict = llm_client.chat_with_functions(
-				messages=message_verification,
-				functions=self.function_docs,
-				temperature=temperature,
-			)
 
-			message = completion.choices[0].message
-			
-			# Record costs directly with usage_dict
+			# Use LangChain-native tool calling via BaseAgent
+			try:
+				response, usage_metrics = llm_client.chat_with_tools(
+					messages=message_verification,
+					tools=self.function_docs,
+				)
+			except Exception as E:
+				error_msg = str(E)
+
+			# Convert usage_metrics to dict for cost tracking
+			usage_dict = None
+			if usage_metrics:
+				usage_dict = {
+					"input_tokens": usage_metrics.input_tokens or 0,
+					"output_tokens": usage_metrics.output_tokens or 0,
+					"total_tokens": usage_metrics.total_tokens or 0,
+				}
+
+			# Record costs using BaseAgent's usage metrics
 			cost_info = record_chat_completion_cost(model=llm_model, tag="verification_loop", usage_dict=usage_dict)
 			print(f"$ Cost verification: ${cost_info['total_cost']:.4f} (in={cost_info['prompt_tokens']}, out={cost_info['completion_tokens']})")
 
-			# Handle both legacy function_call and new tool_calls
-			function_call = None
-			tool_call_id = None
-			if use_tool_calling:
-				# gpt-5 uses tool_calls format
-				if hasattr(message, "tool_calls") and message.tool_calls:
-					tool_call = message.tool_calls[0]
-					tool_call_id = tool_call.id
-					function_call = type('FunctionCall', (), {
-						'name': tool_call.function.name,
-						'arguments': tool_call.function.arguments
-					})()
-					
-					# For gpt-5, add the assistant message with tool_calls
-					assistant_msg = {
-						"role": "assistant",
-						"tool_calls": [
-							{
-								"id": tool_call.id,
-								"type": "function",
-								"function": {
-									"name": tool_call.function.name,
-									"arguments": tool_call.function.arguments
-								}
-							}
-						]
-					}
-					# Add content only if present
-					if hasattr(message, "content") and message.content:
-						assistant_msg["content"] = message.content
-					message_verification.append(assistant_msg)
-			else:
-				# Legacy function_call format
-				function_call = getattr(message, "function_call", None)
+			# Check if LLM made tool calls
+			if hasattr(response, "tool_calls") and response.tool_calls:
+				# Add the assistant's response with tool calls to history
+				# Keep tool_calls in LangChain format for consistency
+				assistant_msg = {
+					"role": "assistant",
+					"content": response.content or "",
+					"tool_calls": response.tool_calls
+				}
+				message_verification.append(assistant_msg)
 
 			if function_call:
 				try:

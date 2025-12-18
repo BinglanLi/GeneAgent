@@ -1,7 +1,6 @@
 import json
 import re
 import pandas as pd
-import os
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
@@ -504,13 +503,13 @@ def main():
 Examples:
   # Basic usage
   python main_cascade.py --input Datasets/MsigDB/MsigDB_toy.csv --llm gpt-4o
-  
+
   # With custom output directory
   python main_cascade.py --input Datasets/GO/GO_toy.csv --llm gpt-4o --output ./results
-  
+
   # Resume from previous run
   python main_cascade.py --input Datasets/MsigDB/MsigDB_toy.csv --llm gpt-4o --resume
-  
+
   # TSV file with custom columns
   python main_cascade.py --input Datasets/NeST/NeST_toy.tsv --id-column "NEST ID" --genes-column "Genes" --llm gpt-4o
         """
@@ -618,14 +617,15 @@ Examples:
     
     # Process each gene set
     total = len(df)
+
     for idx, (_, row) in enumerate(df.iterrows(), 1):
         ID = row['ID']
         genes = row['Genes']
-        
+
         print(f"\n{'='*60}")
         print(f"Processing {idx}/{total}: {ID}")
         print(f"{'='*60}")
-        
+
         try:
             GeneAgent(ID, genes, args.llm, dataset_name, output_dir, resume=args.resume)
         except KeyboardInterrupt:
@@ -639,7 +639,7 @@ Examples:
             else:
                 # In resume mode, stop on error to allow fixing
                 raise
-        
+
     print("\n===Finished!===")
 
 

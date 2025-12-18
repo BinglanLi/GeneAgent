@@ -2,18 +2,23 @@
 Refactored LLM utility module for GeneAgent using BaseAgent infrastructure.
 
 This module provides a simplified interface for LLM operations by directly
-using BaseAgent's get_llm() function without unnecessary wrappers.
+using BaseAgent's get_llm() function and LangChain's native features.
+
+Key improvements:
+- Uses LangChain's native tool binding exclusively (no OpenAI client dependency)
+- Consistent BaseAgent integration throughout
+- Simplified architecture with better maintainability
+- Full support for all providers through BaseAgent
 """
 
-import json
-from typing import Any, Optional, Tuple
+import os
+import requests
+from typing import Optional, Tuple
 from dotenv import load_dotenv
-
-from openai import OpenAI, AzureOpenAI
 
 from BaseAgent.llm import get_llm, extract_usage_metrics, SourceType, UsageMetrics
 from BaseAgent.config import default_config
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 
 load_dotenv()
 
@@ -21,11 +26,12 @@ load_dotenv()
 class SimpleLLMClient:
     """
     Simplified LLM client that uses BaseAgent's infrastructure directly.
-    
-    This replaces the UnifiedLLMClient with a cleaner, simpler design that:
-    - Uses BaseAgent's get_llm() for LangChain-based LLMs
-    - Uses OpenAI client directly for function calling (when needed)
-    - Minimal wrapper, maximum clarity
+
+    This client provides a clean interface for:
+    - Chat completions using BaseAgent's get_llm()
+    - Tool/function calling using LangChain's native .bind_tools()
+    - Usage metrics extraction from BaseAgent
+    - Consistent behavior across all providers (with fallback to OpenAI client for legacy support)
     """
     
     def __init__(self, llm_model: str):
@@ -101,101 +107,118 @@ class SimpleLLMClient:
         
         return content, usage_metrics
     
-    def chat_with_functions(
+    def chat_with_tools(
         self,
         messages: list[dict],
-        functions: list[dict],
-        temperature: float = 0,
-    ) -> Tuple[Any, Optional[dict]]:
+        tools: list[dict],
+    ) -> Tuple[AIMessage, Optional[UsageMetrics]]:
         """
-        Chat completion with function calling using OpenAI client.
-        
+        Chat completion with tool calling using LangChain's native infrastructure.
+
+        This method uses BaseAgent's LLM with .bind_tools() for consistent behavior
+        across all providers (OpenAI, Anthropic, Ollama, etc.).
+
+        Args:
+            messages: List of message dicts in LangChain format
+            tools: List of LangChain tool/function objects
+
+        Returns:
+            Tuple of (response_message, usage_metrics)
+        """
+        # Convert messages to LangChain format
+        lc_messages = self._convert_messages_to_langchain(messages)
+
+        # Bind tools using LangChain's native method
+        # LangChain accepts OpenAI-style schemas directly
+        llm_with_tools = self.llm.bind_tools(tools)
+
+        # Invoke with tools
+        response = llm_with_tools.invoke(lc_messages)
+
+        # Extract usage metrics using BaseAgent's utility
+        usage_metrics = extract_usage_metrics(
+            self.source,
+            response,
+            model=self.llm_model
+        )
+
+        return response, usage_metrics
+
+    def _convert_messages_to_langchain(self, messages: list[dict]) -> list:
+        """
+        Convert OpenAI-style message dicts to LangChain message objects.
+
         Args:
             messages: List of message dicts in OpenAI format
-            functions: List of function definitions
-            temperature: Temperature for generation
-        
+
         Returns:
-            Tuple of (completion_object, usage_dict)
+            List of LangChain message objects
         """
-        client = self._get_openai_client()
-        
-        # Handle gpt-5 models (use tool calling format)
-        if self.llm_model.startswith("gpt-5"):
-            temperature = 1.0 if temperature == 0 else temperature
-            tools = [{"type": "function", "function": func} for func in functions]
-            
-            # Filter out function role messages
-            filtered_messages = [
-                msg for msg in messages if msg.get("role") != "function"
-            ]
-            
-            completion = client.chat.completions.create(
-                model=self.llm_model,
-                messages=filtered_messages,
-                tools=tools,
-                temperature=temperature,
+        lc_messages = []
+        for msg in messages:
+            role = msg["role"]
+            content = msg.get("content", "")
+
+            if role == "system":
+                lc_messages.append(SystemMessage(content=content))
+            elif role == "user":
+                lc_messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                # Handle both regular messages and tool calls
+                if "tool_calls" in msg:
+                    lc_messages.append(AIMessage(
+                        content=content or "",
+                        tool_calls=msg["tool_calls"]
+                    ))
+                else:
+                    lc_messages.append(AIMessage(content=content))
+            elif role == "tool":
+                # Tool response messages
+                lc_messages.append(ToolMessage(
+                    content=content,
+                    tool_call_id=msg.get("tool_call_id", "")
+                ))
+            elif role == "function":
+                # Legacy function response (convert to tool message)
+                lc_messages.append(ToolMessage(
+                    content=content,
+                    tool_call_id=msg.get("name", "")  # Use function name as ID for legacy
+                ))
+
+        return lc_messages
+
+    def cleanup_memory(self) -> bool:
+        """Unload Ollama model from memory to free resources."""
+        if self.source != "Ollama":
+            return True  # Not Ollama, nothing to do
+
+        try:
+            # Get Ollama base URL from environment or use default
+            ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            # Strip /v1 suffix if present (needed for native Ollama API)
+            ollama_url = ollama_url.rstrip("/").replace("/v1", "")
+
+            # Use the full model name as stored, which is what Ollama expects
+            model_name = self.llm_model
+            response = requests.post(
+                f"{ollama_url}/api/generate",
+                json={"model": model_name, "prompt": "", "keep_alive": 0},
+                timeout=10
             )
-        else:
-            # Legacy function calling
-            completion = client.chat.completions.create(
-                model=self.llm_model,
-                messages=messages,
-                functions=functions,
-                temperature=temperature,
-            )
-        
-        # Extract usage
-        usage_dict = None
-        if hasattr(completion, "usage"):
-            usage_dict = {
-                "input_tokens": completion.usage.prompt_tokens,
-                "output_tokens": completion.usage.completion_tokens,
-                "total_tokens": completion.usage.total_tokens,
-            }
-        
-        return completion, usage_dict
-    
-    def _get_openai_client(self):
-        """Get OpenAI client for function calling."""
-        import os
-        
-        model_lower = self.llm_model.lower()
-        
-        # Handle Ollama models - detect by common patterns
-        # Patterns: "gpt-oss:model", "llama*", "model:tag" format
-        is_ollama = (
-            "gpt-oss" in model_lower or
-            "llama" in model_lower or
-            "mistral" in model_lower or
-            "qwen" in model_lower or
-            "phi" in model_lower or
-            "gemma" in model_lower or
-            self.source == "Ollama" or  # Trust the source detection
-            (":" in model_lower and not model_lower.startswith("azure"))  # Common Ollama naming: model:tag
-        )
-        
-        if is_ollama:
-            return OpenAI(
-                base_url="http://localhost:11434/v1",
-                api_key="ollama",
-            )
-        
-        # Handle Azure OpenAI
-        if model_lower.startswith("azure-") or model_lower.startswith("azure_"):
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_API_BASE")
-            azure_api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_API_KEY")
-            azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_API_VERSION")
-            
-            if azure_endpoint and azure_api_key and azure_api_version:
-                return AzureOpenAI(
-                    azure_endpoint=azure_endpoint,
-                    api_key=azure_api_key,
-                    api_version=azure_api_version,
-                )
-        
-        # Default: Standard OpenAI
-        return OpenAI()
+
+            # Check if the model was unloaded successfully
+            if response.status_code == 200:
+                print(f"✓ Unloaded Ollama model '{model_name}' from memory")
+                return True
+            else:
+                print(f"⚠ Failed to unload model (status {response.status_code})")
+                return False
+        except requests.exceptions.ConnectionError:
+            print(f"⚠ Could not connect to Ollama service at {ollama_url}")
+            return False
+        except Exception as e:
+            print(f"⚠ Error unloading model: {e}")
+            return False
 
 
 # Global client cache
@@ -217,36 +240,3 @@ def get_llm_client(llm_model: str) -> SimpleLLMClient:
         _llm_clients[llm_model] = SimpleLLMClient(llm_model)
     return _llm_clients[llm_model]
 
-
-def create_mock_openai_response(content: str, usage_metrics: Optional[UsageMetrics]) -> Any:
-    """
-    Create an OpenAI-compatible response object for backward compatibility.
-    
-    Args:
-        content: Response content
-        usage_metrics: Usage metrics from BaseAgent
-    
-    Returns:
-        Mock response object with OpenAI-like structure
-    """
-    class MockUsage:
-        def __init__(self, metrics):
-            self.prompt_tokens = metrics.input_tokens if metrics and metrics.input_tokens else 0
-            self.completion_tokens = metrics.output_tokens if metrics and metrics.output_tokens else 0
-            self.total_tokens = metrics.total_tokens if metrics and metrics.total_tokens else 0
-    
-    class MockMessage:
-        def __init__(self, content):
-            self.content = content
-            self.role = "assistant"
-    
-    class MockChoice:
-        def __init__(self, content):
-            self.message = MockMessage(content)
-    
-    class MockResponse:
-        def __init__(self, content, usage_metrics):
-            self.choices = [MockChoice(content)]
-            self.usage = MockUsage(usage_metrics)
-    
-    return MockResponse(content, usage_metrics)
