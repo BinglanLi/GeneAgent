@@ -229,12 +229,12 @@ def extract_process_name(summary: str) -> str:
     process_match = re.search(r'Process:\s*(.+?)(?:\n|$)', summary, re.IGNORECASE)
     if process_match:
         return process_match.group(1).strip()
-    
+
     # Fallback: try first line if it looks like a process name
     first_line = summary.split("\n")[0].strip()
     if first_line and len(first_line) < 200:  # Reasonable process name length
         return first_line
-    
+
     # Last resort: return first 50 chars
     return summary[:50].strip()
 
@@ -287,19 +287,13 @@ def get_processed_ids(output_dir: Path) -> set:
     """Get set of already processed IDs from output files."""
     processed = set()
     final_file = output_dir / "Final_Response_GeneAgent.txt"
-    
+
     if final_file.exists():
         with open(final_file, 'r') as f:
-            content = f.read()
-            # Extract IDs from the usage totals file if available
-            totals_file = output_dir / "Usage_Totals.txt"
-            if totals_file.exists():
-                with open(totals_file, 'r') as tf:
-                    for line in tf:
-                        parts = line.strip().split('\t')
-                        if len(parts) >= 2:
-                            processed.add(parts[1])  # ID is second column
-    
+            for line in f:
+                if line.startswith('['):
+                    processed.add(line[1:].split(']')[0].strip())
+
     return processed
 
 
