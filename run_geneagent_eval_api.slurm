@@ -33,7 +33,7 @@ echo "=========================================="
 
 # Step 1: Run GeneAgent evaluation
 echo -e "\n=== Step 1: Running GeneAgent ==="
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
     || exit 1

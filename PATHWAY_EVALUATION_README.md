@@ -11,23 +11,23 @@ The evaluation process consists of two steps:
 
 ## Step 1: Run GeneAgent on Both Gene Sets
 
-Use `run_pathway_evaluation.py` to process both gene sets:
+Use `run_geneagent.py` to process both gene sets:
 
 ```bash
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     -o /home/lib/GeneAgent/Outputs/azure-gpt-4o/ \
     --limit 1  # Optional: limit for testing
 
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm azure-gpt-4o \
     -o /home/lib/GeneAgent/Outputs/azure-gpt-4o/ \
     --limit 1  # Optional: limit for testing
 
 ~/ollama/ollama-manager.sh start
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-oss:20b \
     -o /home/lib/GeneAgent/Outputs/azure-gpt-4o/ \
@@ -90,7 +90,7 @@ The evaluation results CSV contains:
 
 ```bash
 # 1. Run GeneAgent on both gene sets (test with 3 pathways first)
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     --limit 3
@@ -101,7 +101,7 @@ python evaluate_pathway_predictions.py \
     --llm gpt-4o
 
 # 3. For full dataset (remove --limit)
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o
 
@@ -117,13 +117,13 @@ If processing was interrupted, you can resume:
 
 ```bash
 # Resume full_set (if it was already processed)
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     --skip-full
 
 # Or resume reduced_set
-python run_pathway_evaluation.py \
+python run_geneagent.py \
     --input Datasets/AlzKB/selected_pathways_with_descriptions.csv \
     --llm gpt-4o \
     --skip-reduced
