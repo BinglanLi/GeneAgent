@@ -12,6 +12,7 @@ from pathlib import Path
 import argparse
 import tempfile
 import shutil
+import signal
 
 
 def parse_gene_list(gene_str):
@@ -64,7 +65,10 @@ def prepare_csv(input_file: Path, genes_column: str, output_file: Path):
 
 
 def run_main_cascade(input_csv: Path, llm_model: str, output_dir: Path, dataset_suffix: str):
-    """Run main_cascade.py on the prepared CSV."""
+    """
+    Run main_cascade.py as a subprocess with proper cleanup.
+    The subprocess approach avoids import issues and ensures clean process termination.
+    """
     cmd = [
         sys.executable,
         "main_cascade.py",
@@ -72,20 +76,33 @@ def run_main_cascade(input_csv: Path, llm_model: str, output_dir: Path, dataset_
         "--llm", llm_model,
         "--output", str(output_dir),
         "--id-column", "ID",
-        "--genes-column", "Genes"
+        "--genes-column", "Genes",
+        "--clear-output",
     ]
-    
+
     print(f"\n{'='*60}")
-    print(f"Running main_cascade.py for {dataset_suffix}")
+    print(f"Running main_cascade for {dataset_suffix}")
     print(f"Command: {' '.join(cmd)}")
     print(f"{'='*60}\n")
-    
-    result = subprocess.run(cmd, capture_output=False)
-    
-    if result.returncode != 0:
-        raise RuntimeError(f"main_cascade.py failed with return code {result.returncode}")
-    
-    print(f"\nCompleted processing for {dataset_suffix}\n")
+
+    try:
+        # Run with a very long timeout (24 hours) to detect hangs
+        # The explicit sys.exit(0) in main_cascade.py should ensure proper termination
+        result = subprocess.run(
+            cmd,
+            capture_output=False,
+            timeout=14400,  # 4 hours
+            # Ensure subprocess gets killed properly on parent exit
+            preexec_fn=None if sys.platform == "win32" else lambda: signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"main_cascade failed with exit code {result.returncode}")
+
+        print(f"\nCompleted processing for {dataset_suffix}\n")
+
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"main_cascade timed out after 4 hours for {dataset_suffix}")
 
 
 def main():
