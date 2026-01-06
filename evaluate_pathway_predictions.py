@@ -32,51 +32,57 @@ def process_text(text: str) -> list:
     return cleaned_segments
 
 
-def extract_process_names(file_path: Path) -> list:
-    """Extract process names from Final_Response_GeneAgent.txt."""
+def extract_pathways_and_processes(file_path: Path) -> tuple[list, list]:
+    """
+    Extract both reference pathway names and predicted process names from Final_Response_GeneAgent.txt.
+    
+    Returns:
+        tuple: (reference_pathways, predicted_processes)
+            - reference_pathways: list of pathway names from [brackets]
+            - predicted_processes: list of process names from "Process: xxx" lines
+    """
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
     
-    agent_text = ""
     with open(file_path, "r", encoding='utf-8') as agentfile:
-        for line in agentfile.readlines():
-            agent_text += line
+        agent_text = agentfile.read()
     
-    agent_text_processed = process_text(agent_text)
-    agent_terms = []
+    # Use existing process_text function to clean segments
+    cleaned_segments = process_text(agent_text)
+    reference_pathways = []
+    predicted_processes = []
     
-    for text in agent_text_processed:
-        if not text.strip():
-            agent_terms.append("None")
+    for segment in cleaned_segments:
+        if not segment.strip():
             continue
-            
-        seg = text.split("\n")
-        if len(seg) > 1:
-            # Look for "Process: <name>" pattern
-            process_match = None
-            for line in seg:
-                line_lower = line.lower()
-                if "process:" in line_lower:
-                    # Try to extract after "Process:" or "process:"
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        process_match = parts[1].strip()
-                        # Remove any trailing punctuation or formatting
-                        process_match = process_match.rstrip('.,;')
-                        break
-            
-            if process_match:
-                agent_terms.append(process_match)
-            else:
-                # Fallback: use first non-empty line if no Process: found
-                first_line = next((s.strip() for s in seg if s.strip()), "None")
-                agent_terms.append(first_line)
+        
+        # Extract reference pathway name from [brackets]
+        bracket_match = re.search(r'\[([^\]]+)\]', segment)
+        if bracket_match:
+            pathway_name = bracket_match.group(1).strip()
+            reference_pathways.append(pathway_name)
         else:
-            # Single line - use it if not empty
-            cleaned = text.strip()
-            agent_terms.append(cleaned if cleaned else "None")
+            reference_pathways.append(None)
+        
+        # Extract predicted process name from "Process: xxx" line
+        lines = segment.split("\n")
+        process_match = None
+        
+        for line in lines:
+            line_lower = line.lower()
+            if "process:" in line_lower:
+                # Extract after "Process:" or "process:"
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    process_match = parts[1].strip()
+                    # Remove trailing punctuation
+                    process_match = process_match.rstrip('.,;')
+                    break
     
-    return agent_terms
+        # Fallback: use "None" if no Process: found
+        predicted_processes.append(process_match)
+    
+    return reference_pathways, predicted_processes
 
 
 def cos_sim(a: Tensor, b: Tensor):
@@ -191,48 +197,33 @@ def main():
     full_output_dir = output_dir / "full_set"
     reduced_output_dir = output_dir / "reduced_set"
     
-    # Load ground truth
-    print("Loading ground truth pathways...")
-    df_truth = pd.read_csv(input_file)
-    reference_pathways = df_truth['Pathway'].tolist()
-    
-    # Clean reference pathways (same cleaning as in evaluate.ipynb)
-    reference_cleaned = []
-    for pathway in reference_pathways:
-        cleaned = pathway.replace('/', ' ').replace(",", " ").replace('"', "").replace("-", " ").strip()
-        reference_cleaned.append(cleaned)
-    
-    print(f"Loaded {len(reference_cleaned)} reference pathways")
-    
-    # Extract predictions
-    print("\nExtracting predictions from Final_Response_GeneAgent.txt files...")
-    
     full_final_file = full_output_dir / "Final_Response_GeneAgent.txt"
     reduced_final_file = reduced_output_dir / "Final_Response_GeneAgent.txt"
     
+    # Extract reference pathways and predictions from Final_Response_GeneAgent.txt
+    print("Extracting reference and predicted process terms from Final_Response_GeneAgent.txt files...")
+    
+    # Extract reference and predicted process terms from full_set
     try:
-        full_predictions = extract_process_names(full_final_file)
-        print(f"Extracted {len(full_predictions)} predictions from full_set")
+        full_reference, full_predictions = extract_pathways_and_processes(full_final_file)
+        print(f"Extracted {len(full_reference)} reference process terms from full_set")
+        print(f"Extracted {len(full_predictions)} predicted process terms from full_set")
     except FileNotFoundError as e:
-        print(f"Warning: {e}")
+        print(f"Error: {e}")
         print("Skipping full_set evaluation")
+        full_reference = []
         full_predictions = []
     
+    # Extract reference and predicted process terms from reduced_set
     try:
-        reduced_predictions = extract_process_names(reduced_final_file)
-        print(f"Extracted {len(reduced_predictions)} predictions from reduced_set")
+        reduced_reference, reduced_predictions = extract_pathways_and_processes(reduced_final_file)
+        print(f"Extracted {len(reduced_reference)} reference process terms from reduced_set")
+        print(f"Extracted {len(reduced_predictions)} predicted process terms from reduced_set")
     except FileNotFoundError as e:
         print(f"Warning: {e}")
         print("Skipping reduced_set evaluation")
+        reduced_reference = []
         reduced_predictions = []
-    
-    # Align predictions with reference (they should match by index)
-    min_len = min(len(reference_cleaned), len(full_predictions), len(reduced_predictions))
-    reference_cleaned = reference_cleaned[:min_len]
-    full_predictions = full_predictions[:min_len]
-    reduced_predictions = reduced_predictions[:min_len]
-    
-    print(f"\nEvaluating {min_len} pathway predictions...")
     
     # Calculate ROUGE scores
     print("\nCalculating ROUGE scores...")
@@ -243,8 +234,8 @@ def main():
     
     # Evaluate full_set predictions
     if full_predictions:
-        full_rouge = calculate_rouge_scores(reference_cleaned, full_predictions, scorer)
-        for i, (ref, pred, rouge_scores) in enumerate(zip(reference_cleaned, full_predictions, full_rouge)):
+        full_rouge = calculate_rouge_scores(full_reference, full_predictions, scorer)
+        for i, (ref, pred, rouge_scores) in enumerate(zip(full_reference, full_predictions, full_rouge)):
             result = {
                 "pathway_id": i,
                 "reference": ref,
@@ -257,8 +248,8 @@ def main():
     
     # Evaluate reduced_set predictions
     if reduced_predictions:
-        reduced_rouge = calculate_rouge_scores(reference_cleaned, reduced_predictions, scorer)
-        for i, (ref, pred, rouge_scores) in enumerate(zip(reference_cleaned, reduced_predictions, reduced_rouge)):
+        reduced_rouge = calculate_rouge_scores(reduced_reference, reduced_predictions, scorer)
+        for i, (ref, pred, rouge_scores) in enumerate(zip(reduced_reference, reduced_predictions, reduced_rouge)):
             result = {
                 "pathway_id": i,
                 "reference": ref,
@@ -280,7 +271,7 @@ def main():
             if full_predictions:
                 print("Calculating semantic similarity for full_set...")
                 full_semantic = calculate_semantic_similarity(
-                    reference_cleaned, full_predictions, model, tokenizer
+                    full_reference, full_predictions, model, tokenizer
                 )
                 # Add to results
                 for i, score in enumerate(full_semantic):
@@ -291,7 +282,7 @@ def main():
             if reduced_predictions:
                 print("Calculating semantic similarity for reduced_set...")
                 reduced_semantic = calculate_semantic_similarity(
-                    reference_cleaned, reduced_predictions, model, tokenizer
+                    reduced_reference, reduced_predictions, model, tokenizer
                 )
                 # Add to results
                 full_count = len(full_predictions) if full_predictions else 0
@@ -324,10 +315,10 @@ def main():
 
                 
                 if "semantic_similarity" in df_type.columns:
-                    print(f"  Semantic Similarity (MedCPT) avg: {df_type["semantic_similarity"].mean():.4f}")
-                    print(f"  Semantic Similarity (MedCPT) std: {df_type["semantic_similarity"].std():.4f}")
-                    print(f"  Semantic Similarity (MedCPT) min: {df_type["semantic_similarity"].min():.4f}")
-                    print(f"  Semantic Similarity (MedCPT) max: {df_type["semantic_similarity"].max():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) avg: {df_type['semantic_similarity'].mean():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) std: {df_type['semantic_similarity'].std():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) min: {df_type['semantic_similarity'].min():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) max: {df_type['semantic_similarity'].max():.4f}")
         
         # Comparison
         if len(df_results[df_results["prediction_type"] == "full_set"]) > 0 and \
