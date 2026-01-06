@@ -2,12 +2,12 @@
 #SBATCH --job-name=geneagnt_api
 #SBATCH --output=logs/geneagent_api_%A_%a.out
 #SBATCH --error=logs/geneagent_api_%A_%a.err
-#SBATCH --array=0-1                    # API models (no GPU needed)
+#SBATCH --array=0                    # API models (no GPU needed)
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=24:00:00
-#SBATCH --partition=general
+#SBATCH --partition=moore
 
 # API-based LLMs (no GPU required)
 LLMS=(

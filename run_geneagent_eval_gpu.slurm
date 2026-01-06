@@ -2,18 +2,26 @@
 #SBATCH --job-name=geneagent_gpu
 #SBATCH --output=logs/geneagent_gpu_%A_%a.out
 #SBATCH --error=logs/geneagent_gpu_%A_%a.err
-#SBATCH --array=0                      # GPU models (GPU required)
+#SBATCH --array=0                    # GPU models (GPU required)
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu                # GPU partition
 #SBATCH --gres=gpu:1                   # Request 1 GPU
 
 # GPU-based LLMs (Ollama models)
+# Recommended models for complex reasoning tasks:
+# - gpt-oss:20b: OpenAI's GPT-3.5 equivalent model
+# - qwen2.5:14b: Best balance of quality and stability
+# - deepseek-r1:14b: Best reasoning capabilities
+# - llama3.3:70b: Highest quality (requires 40GB+ VRAM)
 LLMS=(
-    "gpt-oss:20b"
+    "qwen2.5:14b"
+    "deepseek-r1:14b"
+    "llama3.3:70b"
 )
+
 
 # Configuration
 INPUT_FILE="Datasets/AlzKB/selected_pathways_with_descriptions.csv"
@@ -32,6 +40,12 @@ echo "Node: $SLURM_NODELIST"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "Start: $(date)"
 echo "=========================================="
+
+# Configure Ollama for stability
+export OLLAMA_KEEP_ALIVE=-1              # Keep models loaded in memory
+export OLLAMA_MAX_LOADED_MODELS=1        # Load only one model at a time
+export OLLAMA_NUM_PARALLEL=1             # Limit parallel requests
+export OLLAMA_MAX_QUEUE=512              # Increase request queue size
 
 # Start Ollama server if needed
 echo -e "\n=== Starting Ollama Server ==="
