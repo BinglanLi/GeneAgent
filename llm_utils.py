@@ -222,14 +222,22 @@ def get_llm_client(
     """
     Get or create a SimpleLLMClient instance for the given model.
     Uses caching to avoid recreating clients.
-    
+
     Args:
         llm_model: The model name
-    
+
     Returns:
         SimpleLLMClient instance
     """
     if llm_model not in _llm_clients:
         _llm_clients[llm_model] = SimpleLLMClient(llm_model, temperature)
     return _llm_clients[llm_model]
+
+
+def cleanup_all_clients():
+    """
+    Clear the LLM client cache.
+    This is useful when running multiple datasets in sequence.
+    """
+    _llm_clients.clear()
 

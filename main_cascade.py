@@ -1,7 +1,10 @@
 import json
 import re
+import sys
+import atexit
 import pandas as pd
 import argparse
+from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -100,7 +103,7 @@ reposits = [
     "get_pubmed_articles"
 ]
 
-agentphd = AgentPhD(function_names=reposits)
+# Note: agentphd is now initialized inside GeneAgent() to avoid hanging on module import
 
 
 def _track_usage_and_cost(usage_metrics, llm_model, tag, total_prompt_tokens, total_completion_tokens, total_cost):
@@ -296,10 +299,10 @@ def get_processed_ids(output_dir: Path) -> set:
     return processed
 
 
-def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool = False):    
+def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool = False):
     """
     Run GeneAgent cascade workflow for a single gene set.
-    
+
     Args:
         ID: Identifier for the gene set
         genes: Gene set string (comma-separated)
@@ -308,8 +311,11 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
         output_dir: Output directory path
         resume: If True, skip if already processed
     """
+    # Initialize agentphd here (not at module level) to avoid hanging on import
+    agentphd = AgentPhD(function_names=reposits)
+
     genes = genes.replace("/",",").replace(" ",",")
-    
+
     pattern = re.compile(r'^[a-zA-Z0-9,.;?!*()_-]+$')
 
     # Check if already processed (for resume mode)
@@ -635,6 +641,7 @@ Examples:
 
         print(f"\n{'='*60}")
         print(f"Processing {idx}/{total}: {ID}")
+        print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}")
 
         try:
@@ -643,7 +650,11 @@ Examples:
             GeneAgent(ID, genes, args.llm, dataset_name, output_dir)
             # Cleanup memory after processing if requested
             llm_client.cleanup_memory() 
-
+            # print time after processing each gene set
+            print(f"\n{'='*60}")
+            print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"{'='*60}")
+            
         except KeyboardInterrupt:
             print("\n\nInterrupted by user. Exiting...")
             break
@@ -658,6 +669,31 @@ Examples:
 
     print("\n===Finished!===")
 
+    # Force cleanup and exit
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+
+def _force_cleanup():
+    """Force cleanup of resources on exit."""
+    try:
+        from llm_utils import cleanup_all_clients
+        cleanup_all_clients()
+    except:
+        pass
+
 
 if __name__ == "__main__":
-    main()
+    # Register cleanup handler
+    atexit.register(_force_cleanup)
+
+    try:
+        main()
+    finally:
+        # Ensure cleanup runs even if main() fails
+        _force_cleanup()
+        # Force flush output streams
+        sys.stdout.flush()
+        sys.stderr.flush()
+        # Exit explicitly with success code
+        sys.exit(0)
