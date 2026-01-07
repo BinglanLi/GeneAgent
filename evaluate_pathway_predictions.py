@@ -62,11 +62,11 @@ def extract_pathways_and_processes(file_path: Path) -> tuple[list, list]:
             pathway_name = bracket_match.group(1).strip()
             reference_pathways.append(pathway_name)
         else:
-            reference_pathways.append(None)
+            reference_pathways.append("None")
         
         # Extract predicted process name from "Process: xxx" line
         lines = segment.split("\n")
-        process_match = None
+        process_match = "None"
         
         for line in lines:
             line_lower = line.lower()
@@ -224,6 +224,21 @@ def main():
         print("Skipping reduced_set evaluation")
         reduced_reference = []
         reduced_predictions = []
+    
+    # Exclude None values from reference and predictions
+    full_reference_none_indices = [i for i, _ in enumerate(full_reference) if _ == "None"]
+    full_predictions_none_indices = [i for i, _ in enumerate(full_predictions) if _ == "None"]
+    reduced_reference_none_indices = [i for i, _ in enumerate(reduced_reference) if _ == "None"]
+    reduced_predictions_none_indices = [i for i, _ in enumerate(reduced_predictions) if _ == "None"]
+    full_none_indices = set(full_reference_none_indices + full_predictions_none_indices)
+    reduced_none_indices = set(reduced_reference_none_indices + reduced_predictions_none_indices)
+    # Clean up references and predictions
+    print(f"Excluding {len(full_none_indices)} None values from the full set")
+    print(f"Excluding {len(reduced_none_indices)} None values from the reduced set")
+    full_reference = [ref for i, ref in enumerate(full_reference) if i not in full_none_indices]
+    full_predictions = [pred for i, pred in enumerate(full_predictions) if i not in full_none_indices]
+    reduced_reference = [ref for i, ref in enumerate(reduced_reference) if i not in reduced_none_indices]
+    reduced_predictions = [pred for i, pred in enumerate(reduced_predictions) if i not in reduced_none_indices]
     
     # Calculate ROUGE scores
     print("\nCalculating ROUGE scores...")
