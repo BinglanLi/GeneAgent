@@ -32,14 +32,21 @@ def process_text(text: str) -> list:
     return cleaned_segments
 
 
-def extract_pathways_and_processes(file_path: Path) -> tuple[list, list]:
+def extract_pathways_and_processes(file_path: Path, include_descriptions: bool = False) -> tuple[list, list, list]:
     """
-    Extract both reference pathway names and predicted process names from Final_Response_GeneAgent.txt.
+    Extract reference pathway names, predicted process names, and pathway descriptions from Final_Response_GeneAgent.txt.
+    
+    Args:
+        file_path: Path to Final_Response_GeneAgent.txt file
+        include_descriptions: If True, includes pathway descriptions in the output. If False, returns a list of "None" for pathway descriptions.
     
     Returns:
-        tuple: (reference_pathways, predicted_processes)
+        tuple: (reference_pathways, predicted_processes, pathway_descriptions)
             - reference_pathways: list of pathway names from [brackets]
             - predicted_processes: list of process names from "Process: xxx" lines
+            - pathway_descriptions: list of pathway descriptions
+                - If include_descriptions is True, includes pathway descriptions in the output.
+                - If include_descriptions is False, returns a list of "None" for pathway descriptions.
     """
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -51,7 +58,8 @@ def extract_pathways_and_processes(file_path: Path) -> tuple[list, list]:
     cleaned_segments = process_text(agent_text)
     reference_pathways = []
     predicted_processes = []
-    
+    pathway_descriptions = []
+
     for segment in cleaned_segments:
         if not segment.strip():
             continue
@@ -67,6 +75,7 @@ def extract_pathways_and_processes(file_path: Path) -> tuple[list, list]:
         # Extract predicted process name from "Process: xxx" line
         lines = segment.split("\n")
         process_match = "None"
+        pathway_descriptions_match = "None"
         
         for line in lines:
             line_lower = line.lower()
@@ -77,12 +86,22 @@ def extract_pathways_and_processes(file_path: Path) -> tuple[list, list]:
                     process_match = parts[1].strip()
                     # Remove trailing punctuation
                     process_match = process_match.rstrip('.,;')
-                    break
+                    if not include_descriptions:
+                        break
     
+            if include_descriptions:
+                # Append any line that does not start with "[" to pathway_descriptions
+                if not line.startswith("["):
+                    if pathway_descriptions_match == "None":
+                        pathway_descriptions_match = line.strip()
+                    else:
+                        pathway_descriptions_match += "\n" + line.strip()
+            
         # Fallback: use "None" if no Process: found
         predicted_processes.append(process_match)
+        pathway_descriptions.append(pathway_descriptions_match)
     
-    return reference_pathways, predicted_processes
+    return reference_pathways, predicted_processes, pathway_descriptions
 
 
 def cos_sim(a: Tensor, b: Tensor):
@@ -120,7 +139,15 @@ def calculate_rouge_scores(reference: list, predictions: list, scorer):
 
 
 def calculate_semantic_similarity(reference: list, predictions: list, model, tokenizer):
-    """Calculate semantic similarity using MedCPT."""
+    """
+    Calculate semantic similarity using MedCPT.
+    
+    Args:
+        reference: List of reference pathway names
+        predictions: List of predicted process names
+        model: MedCPT model
+        tokenizer: MedCPT tokenizer
+    """
     scores = []
     
     for ref, pred in tqdm(zip(reference, predictions), desc="Calculating semantic similarity", total=len(reference)):
@@ -130,7 +157,7 @@ def calculate_semantic_similarity(reference: list, predictions: list, model, tok
                 truncation=True,
                 padding=True,
                 return_tensors='pt',
-                max_length=64,
+                max_length=512,  # Increased to accommodate descriptions
             )
             
             embeds = model(**encoded).last_hidden_state[:, 0, :]
@@ -174,6 +201,12 @@ def main():
     )
     
     parser.add_argument(
+        '--include-descriptions',
+        action='store_true',
+        help='Include pathway descriptions in the evaluation (default: False)'
+    )
+
+    parser.add_argument(
         '--skip-semantic',
         action='store_true',
         help='Skip semantic similarity calculation (faster)'
@@ -205,7 +238,7 @@ def main():
     
     # Extract reference and predicted process terms from full_set
     try:
-        full_reference, full_predictions = extract_pathways_and_processes(full_final_file)
+        full_reference, full_predictions, full_pathway_descriptions = extract_pathways_and_processes(full_final_file, args.include_descriptions)
         print(f"Extracted {len(full_reference)} reference process terms from full_set")
         print(f"Extracted {len(full_predictions)} predicted process terms from full_set")
     except FileNotFoundError as e:
@@ -216,7 +249,7 @@ def main():
     
     # Extract reference and predicted process terms from reduced_set
     try:
-        reduced_reference, reduced_predictions = extract_pathways_and_processes(reduced_final_file)
+        reduced_reference, reduced_predictions, reduced_pathway_descriptions = extract_pathways_and_processes(reduced_final_file, args.include_descriptions)
         print(f"Extracted {len(reduced_reference)} reference process terms from reduced_set")
         print(f"Extracted {len(reduced_predictions)} predicted process terms from reduced_set")
     except FileNotFoundError as e:
@@ -225,13 +258,52 @@ def main():
         reduced_reference = []
         reduced_predictions = []
     
-    # Exclude None values from reference and predictions
+    # Load pathway descriptions from input CSV
+    reference_pathway_descriptions = {}
+    if args.include_descriptions:
+        print("Loading pathway descriptions from input CSV...")
+        pattern = r'\([^)]*\)'
+        df_input = pd.read_csv(input_file)
+        if 'Pathway' in df_input.columns and 'Pathway_Description' in df_input.columns:
+            for _, row in df_input.iterrows():
+                pathway_name = row.get('Pathway', '')
+                pathway_name = re.sub(pattern, '', pathway_name)
+                pathway_name = pathway_name.replace('/', ' ').replace(",", " ").replace('"', "").replace("-", " ").strip()
+                pathway_desc = row.get('Pathway_Description', '')
+                pathway_desc = pathway_desc.strip() if pd.notna(pathway_desc) else 'None'
+                reference_pathway_descriptions[pathway_name] = pathway_desc
+            print(f"Loaded {len(reference_pathway_descriptions)} pathway descriptions")
+        else:
+            print("Warning: 'Pathway' and 'Pathway_Description' columns not found in input CSV. Proceeding without descriptions.")
+
+    # Exclude None indices from reference and predictions
+    # Find None indices of reference pathway in the final response for the full set
     full_reference_none_indices = [i for i, _ in enumerate(full_reference) if _ == "None"]
+    # Find None indices of reference pathway description for the full set
+    if args.include_descriptions:
+        full_reference_description_none_indices = [
+            i for i, ref in enumerate(full_reference) 
+            if reference_pathway_descriptions[ref] == "None"
+        ]
+        full_reference_none_indices += full_reference_description_none_indices
+    # Find None indices of annotated process names for the full set
     full_predictions_none_indices = [i for i, _ in enumerate(full_predictions) if _ == "None"]
+    # Find None indices of reference pathway in the final response for the reduced set
     reduced_reference_none_indices = [i for i, _ in enumerate(reduced_reference) if _ == "None"]
+    # Find None indices of reference pathway description for the reduced set
+    if args.include_descriptions:
+        reduced_reference_description_none_indices = [
+            i for i, ref in enumerate(reduced_reference) 
+            if reference_pathway_descriptions[ref] == "None"
+        ]
+        reduced_reference_none_indices += reduced_reference_description_none_indices
+    # Find None indices of annotated process names for the reduced set
     reduced_predictions_none_indices = [i for i, _ in enumerate(reduced_predictions) if _ == "None"]
+    # Combine None indices for the full set
     full_none_indices = set(full_reference_none_indices + full_predictions_none_indices)
+    # Combine None indices for the reduced set
     reduced_none_indices = set(reduced_reference_none_indices + reduced_predictions_none_indices)
+
     # Clean up references and predictions
     print(f"Excluding {len(full_none_indices)} None values from the full set")
     print(f"Excluding {len(reduced_none_indices)} None values from the reduced set")
@@ -239,6 +311,14 @@ def main():
     full_predictions = [pred for i, pred in enumerate(full_predictions) if i not in full_none_indices]
     reduced_reference = [ref for i, ref in enumerate(reduced_reference) if i not in reduced_none_indices]
     reduced_predictions = [pred for i, pred in enumerate(reduced_predictions) if i not in reduced_none_indices]
+
+    # Concatenate process name with description
+    if args.include_descriptions:
+        full_reference = [f"{ref} {reference_pathway_descriptions[ref]}" for ref in full_reference]
+        full_predictions = [f"{pred} {full_pathway_descriptions[i]}" for i, pred in enumerate(full_predictions) if i not in full_none_indices]
+        reduced_reference = [f"{ref} {reference_pathway_descriptions[ref]}" for ref in reduced_reference]
+        reduced_predictions = [f"{pred} {reduced_pathway_descriptions[i]}" for i, pred in enumerate(reduced_predictions) if i not in reduced_none_indices]
+    
     
     # Calculate ROUGE scores
     print("\nCalculating ROUGE scores...")
