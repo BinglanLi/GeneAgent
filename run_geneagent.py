@@ -71,6 +71,7 @@ def run_main_cascade(input_csv: Path, llm_model: str, output_dir: Path, dataset_
     """
     cmd = [
         sys.executable,
+        "-u",  # Unbuffered output for subprocess
         "main_cascade.py",
         "--input", str(input_csv),
         "--llm", llm_model,
@@ -91,7 +92,7 @@ def run_main_cascade(input_csv: Path, llm_model: str, output_dir: Path, dataset_
         result = subprocess.run(
             cmd,
             capture_output=False,
-            timeout=14400,  # 4 hours
+            timeout=86400,  # 24 hours
             # Ensure subprocess gets killed properly on parent exit
             preexec_fn=None if sys.platform == "win32" else lambda: signal.signal(signal.SIGPIPE, signal.SIG_DFL)
         )
