@@ -2,7 +2,7 @@
 #SBATCH --job-name=geneagent_gpu
 #SBATCH --output=logs/geneagent_gpu_%A_%a.out
 #SBATCH --error=logs/geneagent_gpu_%A_%a.err
-#SBATCH --array=0                    # GPU models (GPU required)
+#SBATCH --array=1-2                    # GPU models (GPU required)
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=128G
@@ -14,11 +14,11 @@
 # Recommended models for complex reasoning tasks:
 # - gpt-oss:20b: OpenAI's GPT-3.5 equivalent model
 # - qwen2.5:14b: Best balance of quality and stability
-# - deepseek-r1:14b: Best reasoning capabilities
+# - deepseek-r1:14b: Best reasoning capabilities``
 # - llama3.3:70b: Highest quality (requires 40GB+ VRAM)
 LLMS=(
+    "gpt-oss:20b"
     "qwen2.5:14b"
-    "deepseek-r1:14b"
     "llama3.3:70b"
 )
 
@@ -56,18 +56,18 @@ echo -e "\n=== Step 1: Running GeneAgent ==="
 python run_geneagent.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
-    || { ~/ollama/ollama-manager.sh stop; exit 1; }
+    || exit 1
+# Stop Ollama server
+echo -e "\n=== Stopping Ollama Server ==="
+~/ollama/ollama-manager.sh stop
 
 # Step 2: Evaluate predictions
 echo -e "\n=== Step 2: Evaluating Predictions ==="
 python evaluate_pathway_predictions.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
-    || { ~/ollama/ollama-manager.sh stop; exit 1; }
+    || exit 1
 
-# Stop Ollama server
-echo -e "\n=== Stopping Ollama Server ==="
-~/ollama/ollama-manager.sh stop
 
 echo -e "\n=========================================="
 echo "COMPLETED: $LLM"
