@@ -146,9 +146,10 @@ Before running GeneAgent, you need to configure your LLM provider credentials.
    mkdir -p ~/ollama
    cd ~/ollama
    # install
-   curl -L https://ollama.com/download/ollama-linux-amd64.tgz -o ollama-linux-amd64.tgz
+   curl -L https://ollama.com/download/ollama-linux-amd64.tar.zst -o ollama-linux-amd64.tar.zst
    # extract
-   tar -C ~/ollama -xzf ollama-linux-amd64.tgz
+   mkdir -p ~/ollama_test
+   zstd -d ollama-linux-amd64.tar.zst -c | tar -xf - -C ~/ollama_test
    ```
 
 2. Configure the environment variables by adding the following lines in `~/.bashrc` or` ~/.zshrc`.
