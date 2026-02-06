@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=moore
 
 # API-based LLMs (no GPU required)
@@ -36,6 +36,7 @@ echo -e "\n=== Step 1: Running GeneAgent ==="
 python run_geneagent.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
+    --skip-full
     || exit 1
 
 # Step 2: Evaluate predictions
