@@ -9,6 +9,10 @@
 #SBATCH --time=48:00:00
 #SBATCH --partition=moore
 
+echo "Load modules..."
+module load gcc
+module load cuda12.6
+
 # API-based LLMs (no GPU required)
 LLMS=(
     "azure-gpt-4o"

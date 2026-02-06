@@ -10,6 +10,11 @@
 #SBATCH --partition=gpu                # GPU partition
 #SBATCH --gres=gpu:1                   # Request 1 GPU
 
+
+echo "Load modules..."
+module load gcc
+module load cuda12.6
+
 # GPU-based LLMs (Ollama models)
 # Recommended models for complex reasoning tasks:
 # - gpt-oss:20b: OpenAI's GPT-3.5 equivalent model
