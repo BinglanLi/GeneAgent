@@ -438,9 +438,11 @@ def main():
     # Save results
     if args.output_file:
         output_file = Path(args.output_file)
+    elif args.include_descriptions:
+        output_file = output_dir / "evaluation_results_descriptionsIncluded.csv"
     else:
         output_file = output_dir / "evaluation_results.csv"
-    
+
     df_results.to_csv(output_file, index=False)
     print(f"\nDetailed results saved to: {output_file}")
     
