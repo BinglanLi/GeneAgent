@@ -95,7 +95,7 @@ def extract_pathways_and_processes(file_path: Path, include_descriptions: bool =
                     if pathway_descriptions_match == "None":
                         pathway_descriptions_match = line.strip()
                     else:
-                        pathway_descriptions_match += "\n" + line.strip()
+                        pathway_descriptions_match += " " + line.rstrip()
             
         # Fallback: use "None" if no Process: found
         predicted_processes.append(process_match)
