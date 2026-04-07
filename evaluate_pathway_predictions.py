@@ -4,16 +4,19 @@ Evaluate GeneAgent predictions against ground truth Pathway names.
 Compares full_set and reduced_set predictions using ROUGE scores and semantic similarity (MedCPT).
 """
 
-import pandas as pd
 import re
-from pathlib import Path
 import argparse
-import numpy as np
-from rouge_score import rouge_scorer
 import torch
+import pandas as pd
+import numpy as np
+
+from pathlib import Path
+from rouge_score import rouge_scorer
 from torch import Tensor
 from transformers import AutoTokenizer, AutoModel
 from tqdm import tqdm
+from scipy import stats
+
 
 
 def process_text(text: str) -> list:
@@ -407,11 +410,20 @@ def main():
                 for metric in metrics:
                     if metric in df_type.columns:
                         print(f"  {metric} mean: {df_type[metric].mean():.4f}")
-
                 
                 if "semantic_similarity" in df_type.columns:
+                    non_none_semantic = df_type["semantic_similarity"].dropna()
+                    semantic_size = len(non_none_semantic)
+                    semantic_mean = non_none_semantic.mean()
+                    semantic_sem = non_none_semantic.std(ddof=1) / np.sqrt(semantic_size)
+                    semantic_ci = stats.t.interval(
+                        0.95, 
+                        df=semantic_size-1, 
+                        loc=semantic_mean, 
+                        scale=semantic_sem)
+
                     print(f"  Semantic Similarity (MedCPT) avg: {df_type['semantic_similarity'].mean():.4f}")
-                    print(f"  Semantic Similarity (MedCPT) std: {df_type['semantic_similarity'].std():.4f}")
+                    print(f"  Semantic Similarity (MedCPT) ci: {semantic_ci[0]:.4f} - {semantic_ci[1]:.4f}")
                     print(f"  Semantic Similarity (MedCPT) min: {df_type['semantic_similarity'].min():.4f}")
                     print(f"  Semantic Similarity (MedCPT) max: {df_type['semantic_similarity'].max():.4f}")
         
