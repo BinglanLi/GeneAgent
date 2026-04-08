@@ -179,7 +179,8 @@ def main():
     parser.add_argument(
         '--input', '-i',
         type=str,
-        help='Path to input CSV file with Pathway column'
+        nargs='+',
+        help='Paths to input CSV files with Pathway column, e.g., \"file1\" or \"file1 file2\"'
     )
     
     parser.add_argument(
@@ -218,66 +219,88 @@ def main():
     args = parser.parse_args()
     
     # Resolve paths
-    input_file = Path(args.input).resolve()
-    if not input_file.exists():
-        raise FileNotFoundError(f"Input file not found: {input_file}")
+    input_files = [Path(_).resolve() for _ in args.input]
+    for input_file in input_files:
+        if not input_file.exists():
+            raise FileNotFoundError(f"Input file not found: {input_file}")
     
-    # Set up output directories
-    dataset_name = input_file.stem
+    # Set output path
+    base_dir = Path(__file__).absolute().parent
+    results_dir = base_dir / "Outputs" / args.llm
     if args.output_dir:
         output_dir = Path(args.output_dir).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
     else:
-        base_dir = Path(__file__).absolute().parent
-        output_dir = base_dir / "Outputs" / args.llm / dataset_name
+        # Set up output directories based on first input
+        output_dir = results_dir / input_files[0].stem
     
-    full_output_dir = output_dir / "full_set"
-    reduced_output_dir = output_dir / "reduced_set"
-    
-    full_final_file = full_output_dir / "Final_Response_GeneAgent.txt"
-    reduced_final_file = reduced_output_dir / "Final_Response_GeneAgent.txt"
-    
-    # Extract reference pathways and predictions from Final_Response_GeneAgent.txt
-    print("Extracting reference and predicted process terms from Final_Response_GeneAgent.txt files...")
-    
-    # Extract reference and predicted process terms from full_set
-    try:
-        full_reference, full_predictions, full_pathway_descriptions = extract_pathways_and_processes(full_final_file, args.include_descriptions)
-        print(f"Extracted {len(full_reference)} reference process terms from full_set")
-        print(f"Extracted {len(full_predictions)} predicted process terms from full_set")
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Skipping full_set evaluation")
-        full_reference = []
-        full_predictions = []
-    
-    # Extract reference and predicted process terms from reduced_set
-    try:
-        reduced_reference, reduced_predictions, reduced_pathway_descriptions = extract_pathways_and_processes(reduced_final_file, args.include_descriptions)
-        print(f"Extracted {len(reduced_reference)} reference process terms from reduced_set")
-        print(f"Extracted {len(reduced_predictions)} predicted process terms from reduced_set")
-    except FileNotFoundError as e:
-        print(f"Warning: {e}")
-        print("Skipping reduced_set evaluation")
-        reduced_reference = []
-        reduced_predictions = []
-    
-    # Load pathway descriptions from input CSV
+    # Initialize combined lists
+    combined_full_reference = []
+    combined_full_predictions = []
+    combined_full_pathway_descriptions = []
+    combined_reduced_reference = []
+    combined_reduced_predictions = []
+    combined_reduced_pathway_descriptions = []
     reference_pathway_descriptions = {}
-    if args.include_descriptions:
-        print("Loading pathway descriptions from input CSV...")
-        pattern = r'\([^)]*\)'
-        df_input = pd.read_csv(input_file)
-        if 'Pathway' in df_input.columns and 'Pathway_Description' in df_input.columns:
-            for _, row in df_input.iterrows():
-                pathway_name = row.get('Pathway', '')
-                pathway_name = re.sub(pattern, '', pathway_name)
-                pathway_name = pathway_name.replace('/', ' ').replace(",", " ").replace('"', "").replace("-", " ").strip()
-                pathway_desc = row.get('Pathway_Description', '')
-                pathway_desc = pathway_desc.strip() if pd.notna(pathway_desc) else 'None'
-                reference_pathway_descriptions[pathway_name] = pathway_desc
-            print(f"Loaded {len(reference_pathway_descriptions)} pathway descriptions")
-        else:
-            print("Warning: 'Pathway' and 'Pathway_Description' columns not found in input CSV. Proceeding without descriptions.")
+    
+    for input_file in input_files:
+        dataset_name = input_file.stem
+        print(f"Processing dataset: {dataset_name}")
+        
+        full_results_dir = results_dir / dataset_name / "full_set"
+        reduced_results_dir = results_dir / dataset_name / "reduced_set"
+        
+        full_final_file = full_results_dir / "Final_Response_GeneAgent.txt"
+        reduced_final_file = reduced_results_dir / "Final_Response_GeneAgent.txt"
+        
+        # Load pathway descriptions from input CSV
+        if args.include_descriptions:
+            print(f"Loading pathway descriptions from {input_file}...")
+            pattern = r'\([^)]*\)'
+            df_input = pd.read_csv(input_file)
+            if 'Pathway' in df_input.columns and 'Pathway_Description' in df_input.columns:
+                for _, row in df_input.iterrows():
+                    pathway_name = row.get('Pathway', '')
+                    pathway_name = re.sub(pattern, '', pathway_name)
+                    pathway_name = pathway_name.replace('/', ' ').replace(",", " ").replace('"', "").replace("-", " ").strip()
+                    pathway_desc = row.get('Pathway_Description', '')
+                    pathway_desc = pathway_desc.strip() if pd.notna(pathway_desc) else 'None'
+                    reference_pathway_descriptions[pathway_name] = pathway_desc
+                print(f"Loaded {len(reference_pathway_descriptions)} pathway descriptions so far")
+            else:
+                print(f"Warning: 'Pathway' and 'Pathway_Description' columns not found in {input_file}. Proceeding without descriptions.")
+        
+        # Extract reference and predicted process terms from full_set
+        try:
+            full_reference, full_predictions, full_pathway_descriptions = extract_pathways_and_processes(full_final_file, args.include_descriptions)
+            print(f"Extracted {len(full_reference)} reference process terms from full_set for {dataset_name}")
+            print(f"Extracted {len(full_predictions)} predicted process terms from full_set for {dataset_name}")
+            combined_full_reference.extend(full_reference)
+            combined_full_predictions.extend(full_predictions)
+            combined_full_pathway_descriptions.extend(full_pathway_descriptions)
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+            print(f"Skipping full_set evaluation for {dataset_name}")
+        
+        # Extract reference and predicted process terms from reduced_set
+        try:
+            reduced_reference, reduced_predictions, reduced_pathway_descriptions = extract_pathways_and_processes(reduced_final_file, args.include_descriptions)
+            print(f"Extracted {len(reduced_reference)} reference process terms from reduced_set for {dataset_name}")
+            print(f"Extracted {len(reduced_predictions)} predicted process terms from reduced_set for {dataset_name}")
+            combined_reduced_reference.extend(reduced_reference)
+            combined_reduced_predictions.extend(reduced_predictions)
+            combined_reduced_pathway_descriptions.extend(reduced_pathway_descriptions)
+        except FileNotFoundError as e:
+            print(f"Warning: {e}")
+            print(f"Skipping reduced_set evaluation for {dataset_name}")
+    
+    # Now use the combined lists
+    full_reference = combined_full_reference
+    full_predictions = combined_full_predictions
+    full_pathway_descriptions = combined_full_pathway_descriptions
+    reduced_reference = combined_reduced_reference
+    reduced_predictions = combined_reduced_predictions
+    reduced_pathway_descriptions = combined_reduced_pathway_descriptions
 
     # Exclude None indices from reference and predictions
     # Find None indices of reference pathway in the final response for the full set
@@ -312,15 +335,17 @@ def main():
     print(f"Excluding {len(reduced_none_indices)} None values from the reduced set")
     full_reference = [ref for i, ref in enumerate(full_reference) if i not in full_none_indices]
     full_predictions = [pred for i, pred in enumerate(full_predictions) if i not in full_none_indices]
+    full_pathway_descriptions = [desc for i, desc in enumerate(full_pathway_descriptions) if i not in full_none_indices]
     reduced_reference = [ref for i, ref in enumerate(reduced_reference) if i not in reduced_none_indices]
     reduced_predictions = [pred for i, pred in enumerate(reduced_predictions) if i not in reduced_none_indices]
+    reduced_pathway_descriptions = [desc for i, desc in enumerate(reduced_pathway_descriptions) if i not in reduced_none_indices]
 
     # Concatenate process name with description
     if args.include_descriptions:
         full_reference = [f"{ref} {reference_pathway_descriptions[ref]}" for ref in full_reference]
-        full_predictions = [f"{pred} {full_pathway_descriptions[i]}" for i, pred in enumerate(full_predictions) if i not in full_none_indices]
+        full_predictions = [f"{pred} {desc}" for pred, desc in zip(full_predictions, full_pathway_descriptions)]
         reduced_reference = [f"{ref} {reference_pathway_descriptions[ref]}" for ref in reduced_reference]
-        reduced_predictions = [f"{pred} {reduced_pathway_descriptions[i]}" for i, pred in enumerate(reduced_predictions) if i not in reduced_none_indices]
+        reduced_predictions = [f"{pred} {desc}" for pred, desc in zip(reduced_predictions, reduced_pathway_descriptions)]
     
     
     # Calculate ROUGE scores
