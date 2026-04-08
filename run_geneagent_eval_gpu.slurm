@@ -33,6 +33,31 @@ NOISE_LEVELS_LEN=${#NOISE_LEVELS[@]}
 PARTS=(1 2)
 PARTS_LEN=${#PARTS[@]}
 
+
+# for SLURM_ARRAY_TASK_ID in {0..11}; do
+#     # Configurations
+#     LLM=${LLMS[$((SLURM_ARRAY_TASK_ID / NOISE_LEVELS_LEN))]}  
+#     NOISE_LEVEL=${NOISE_LEVELS[$((SLURM_ARRAY_TASK_ID % NOISE_LEVELS_LEN))]}  
+#     echo "LLM: $LLM, Noise Level: $NOISE_LEVEL"
+#     BASE_DIR="/home/lib/GeneAgent"
+
+#     python evaluate_pathway_predictions.py \
+#         --input "Datasets/AlzKB/toy_alzkb_noise_${NOISE_LEVEL}_1.csv" "Datasets/AlzKB/toy_alzkb_noise_${NOISE_LEVEL}_2.csv" \
+#         -o "Outputs/${LLM}/toy_alzkb_noise_${NOISE_LEVEL}_combined" \
+#         --llm "$LLM" \
+#         || exit 1
+
+#     echo -e "\n--- Descriptions Included Evaluation ---"
+#     python evaluate_pathway_predictions.py \
+#         --input "Datasets/AlzKB/toy_alzkb_noise_${NOISE_LEVEL}_1.csv" "Datasets/AlzKB/toy_alzkb_noise_${NOISE_LEVEL}_2.csv" \
+#         -o "Outputs/${LLM}/toy_alzkb_noise_${NOISE_LEVEL}_combined" \
+#         --llm "$LLM" \
+#         --include-descriptions \
+#         || exit 1
+
+# done
+
+
 # Configurations
 LLM=${LLMS[$((SLURM_ARRAY_TASK_ID / (NOISE_LEVELS_LEN * PARTS_LEN)))]}  # Cycle through LLMs, 8 = 4 noise levels * 2 parts
 NOISE_LEVEL=${NOISE_LEVELS[$((SLURM_ARRAY_TASK_ID / PARTS_LEN % NOISE_LEVELS_LEN))]}  # Determine noise level based on SLURM ARRAY ID
