@@ -82,23 +82,23 @@ def extract_pathways_and_processes(file_path: Path, include_descriptions: bool =
         
         for line in lines:
             line_lower = line.lower()
-            if "process:" in line_lower:
+            if line_lower.startswith("process:"):
                 # Extract after "Process:" or "process:"
                 parts = line.split(":", 1)
                 if len(parts) > 1:
                     process_match = parts[1].strip()
                     # Remove trailing punctuation
                     process_match = process_match.rstrip('.,;')
-                    if not include_descriptions:
-                        break
-    
-            if include_descriptions:
-                # Append any line that does not start with "[" to pathway_descriptions
-                if not line.startswith("["):
-                    if pathway_descriptions_match == "None":
-                        pathway_descriptions_match = line.strip()
-                    else:
-                        pathway_descriptions_match += " " + line.rstrip()
+                # If not including descriptions, break after finding the process name
+                if not include_descriptions:
+                    break
+            
+            # Append any line that does not start with "[" to pathway_descriptions
+            if not line.startswith("["):
+                if pathway_descriptions_match == "None":
+                    pathway_descriptions_match = line.strip()
+                else:
+                    pathway_descriptions_match += " " + line.rstrip()
             
         # Fallback: use "None" if no Process: found
         predicted_processes.append(process_match)
@@ -448,7 +448,7 @@ def main():
                         scale=semantic_sem)
 
                     print(f"  Semantic Similarity (MedCPT) avg: {df_type['semantic_similarity'].mean():.4f}")
-                    print(f"  Semantic Similarity (MedCPT) ci: {semantic_ci[0]:.4f} - {semantic_ci[1]:.4f}")
+                    print(f"  Semantic Similarity (MedCPT) ci: ({semantic_ci[0]:.4f}, {semantic_ci[1]:.4f})")
                     print(f"  Semantic Similarity (MedCPT) min: {df_type['semantic_similarity'].min():.4f}")
                     print(f"  Semantic Similarity (MedCPT) max: {df_type['semantic_similarity'].max():.4f}")
         

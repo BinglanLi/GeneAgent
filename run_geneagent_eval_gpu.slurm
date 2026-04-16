@@ -34,6 +34,16 @@ PARTS=(1 2)
 PARTS_LEN=${#PARTS[@]}
 
 
+
+# LLMS=(
+#     "gpt-oss:20b"
+#     "qwen2.5:14b"
+#     "llama3.3:70b"
+# )
+# LLMS_LEN=${#LLMS[@]}
+# # Define input file parameters
+# NOISE_LEVELS=(20 40 60 80)
+# NOISE_LEVELS_LEN=${#NOISE_LEVELS[@]}
 # for SLURM_ARRAY_TASK_ID in {0..11}; do
 #     # Configurations
 #     LLM=${LLMS[$((SLURM_ARRAY_TASK_ID / NOISE_LEVELS_LEN))]}  
