@@ -1,6 +1,7 @@
 import json
 import requests
 from xml.etree import ElementTree
+from ._session import make_session
 
 def get_pubmed_articles(term):
     base_url_pubmed = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -13,23 +14,29 @@ def get_pubmed_articles(term):
         "retmax": "5",
         "sort": "relevance"
     }
-    search_response = requests.get(search_url, params=search_params)
+    try:
+        session = make_session()
+        search_response = session.get(search_url, params=search_params, timeout=30)
+    except requests.exceptions.RequestException as e:
+        return f"Error fetching search results: {e}"
     try:
         search_results = ElementTree.fromstring(search_response.content)
         id_list = [id_tag.text for id_tag in search_results.findall('.//Id')]
     except ElementTree.ParseError as e:
         return f"Error parsing search results: {e}"
-    
+
     if not id_list:
         return "No articles found for the query."
-    
+
     fetch_params = {
         "db": "pubmed",
         "id": ",".join(id_list),
         "retmode": "xml"
     }
-    fetch_response = requests.get(fetch_url, params=fetch_params)
-    
+    try:
+        fetch_response = session.get(fetch_url, params=fetch_params, timeout=30)
+    except requests.exceptions.RequestException as e:
+        return f"Error fetching articles: {e}"
     try:
         articles = ElementTree.fromstring(fetch_response.content)
     except ElementTree.ParseError as e:

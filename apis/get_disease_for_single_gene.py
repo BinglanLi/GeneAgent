@@ -1,5 +1,6 @@
 import requests
 import json
+from ._session import make_session
 
 def get_disease_for_single_gene(gene_name):
     url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/agentapi/disease/?"
@@ -8,12 +9,14 @@ def get_disease_for_single_gene(gene_name):
         "retmode": "json",
         "limit": 100
         }
-    response = requests.get(url, params=params)
-
-    if response.status_code == 200:
-        return json.dumps(response.json().get("results",{}))
-    else:
-        return f"Error: Unable to fetch data"
+    try:
+        session = make_session()
+        response = session.get(url, params=params, timeout=30)
+        if response.status_code == 200:
+            return json.dumps(response.json().get("results", {}))
+        return f"Error: Unable to fetch data (Status Code: {response.status_code})"
+    except requests.exceptions.RequestException as e:
+        return f"Error: {e}"
 
 # Example usage
 # gene_name = "BRCA1"  # Replace with the gene name you are interested in

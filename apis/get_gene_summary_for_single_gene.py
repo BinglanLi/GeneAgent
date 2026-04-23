@@ -1,6 +1,6 @@
 import json
 import requests
-import time
+from ._session import make_session
 
 def get_gene_summary_for_single_gene(gene_name, specie):
 	base_url_search = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -12,24 +12,26 @@ def get_gene_summary_for_single_gene(gene_name, specie):
 		"retmode": "json",
 		"sort": "relevance"
 	}
-	search_response = requests.get(base_url_search, params=search_params)
-	gene_id = search_response.json().get('esearchresult', {}).get('idlist', [])
+	try:
+		session = make_session()
+		search_response = session.get(base_url_search, params=search_params, timeout=30)
+		gene_id = search_response.json().get('esearchresult', {}).get('idlist', [])
 
-	if gene_id:
-		# Fetch summaries for the found gene IDs
-		summary_params = {
-			"db": "gene",
-			"id": gene_id[0],
-			"retmode": "json",
-   			"sort": "relevance"
-		}
-		summary_response = requests.get(base_url_summary, params=summary_params)
-		gene_summaries = summary_response.json().get('result', {})[gene_id[0]]
-		gene_summaries.pop('locationhist')
-		return gene_summaries
+		if gene_id:
+			summary_params = {
+				"db": "gene",
+				"id": gene_id[0],
+				"retmode": "json",
+				"sort": "relevance"
+			}
+			summary_response = session.get(base_url_summary, params=summary_params, timeout=30)
+			gene_summaries = summary_response.json().get('result', {})[gene_id[0]]
+			gene_summaries.pop('locationhist')
+			return gene_summaries
 
-	else:
 		return None
+	except requests.exceptions.RequestException as e:
+		return f"Error: {e}"
 		
 
 get_gene_summary_for_single_gene_doc = {

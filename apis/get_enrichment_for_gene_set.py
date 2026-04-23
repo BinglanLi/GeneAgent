@@ -1,11 +1,12 @@
 import json
 import requests
+from ._session import make_session
 
 def get_enrichment_for_gene_set(gene_set):
-    
+
     gene_set = gene_set.replace(" ","")
-    gene_list = gene_set.split(",")  
-      
+    gene_list = gene_set.split(",")
+
     url = "https://biit.cs.ut.ee/gprofiler/api/gost/profile/"
     headers = {'Content-Type': 'application/json'}
     payload = {
@@ -16,12 +17,14 @@ def get_enrichment_for_gene_set(gene_set):
         "user_threshold": 0.05
     }
 
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
-    if response.status_code == 200:
-        return json.dumps(response.json()["result"][:5])
-    else:
-        error_message = f"Error: {response.status_code}"
-        return error_message
+    try:
+        session = make_session()
+        response = session.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+        if response.status_code == 200:
+            return json.dumps(response.json()["result"][:5])
+        return f"Error: {response.status_code}"
+    except requests.exceptions.RequestException as e:
+        return f"Error: {e}"
 
 get_enrichment_for_gene_set_doc = {
     "name": "get_enrichment_for_gene_set",

@@ -1,5 +1,6 @@
 import requests
 import json
+from ._session import make_session
 
 def get_interactions_for_gene_set(gene_set):
     url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/agentapi/ppi/?"
@@ -8,12 +9,14 @@ def get_interactions_for_gene_set(gene_set):
         "retmode": "json",
         "limit": 50
         }
-    response = requests.get(url, params=params)
-
-    if response.status_code == 200:
-        return json.dumps(response.json().get("results",{}))
-    else:
+    try:
+        session = make_session()
+        response = session.get(url, params=params, timeout=30)
+        if response.status_code == 200:
+            return json.dumps(response.json().get("results", {}))
         return f"Error: Unable to fetch data (Status Code: {response.status_code})"
+    except requests.exceptions.RequestException as e:
+        return f"Error: {e}"
 
 get_interactions_for_gene_set_doc = {
 	"name": "get_interactions_for_gene_set",
