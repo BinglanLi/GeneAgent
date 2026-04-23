@@ -2,6 +2,7 @@
 Outputs/
 Datasets/AlzKB/
 logs/
+.claude/
 
 .DS_Store
 __pycache__/
