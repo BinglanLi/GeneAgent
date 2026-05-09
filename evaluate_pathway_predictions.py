@@ -53,7 +53,7 @@ reference pathway, strictly based on the score rubric below.
 "Feedback: (write a feedback) [RESULT] (an integer between 1 and 5)"
 4. Please do not generate any other opening, closing, or explanations.
 
-###Reference Pathway Name (Score 5):
+###Reference Pathway Name (Score 4):
 {reference}
 
 ###Predicted Pathway Name to Evaluate:
@@ -67,15 +67,39 @@ biological process or system.
 Score 2: The predicted name is in a related biological domain but identifies a \
 materially different process (e.g., a sibling pathway that does not subsume the \
 reference).
-Score 3: The predicted name partially overlaps with the reference — captures \
-the same biological system or category but differs in the specific mechanism or \
-molecular focus.
-Score 4: The predicted name is a close synonym, near-equivalent label, or an \
+Score 3: The predicted name is a close synonym, near-equivalent label, or an \
 immediately adjacent hierarchical level (direct parent or child) in Reactome \
 that preserves the core biological meaning.
-Score 5: The predicted name refers to the same specific biological process as \
+Score 4: The predicted name refers to the same specific biological process as \
 the reference (exact match, clear synonym, or equivalent wording with no \
 meaningful semantic difference).
+
+###Examples:
+<score-4-example>
+Reference title: "Assembly of the pre-replicative complex"
+Prediction title: "Formation of the pre-replicative complex"
+</score-4-example>
+
+<score-3-example>
+Reference title: "Assembly of the pre-replicative complex"
+Prediction title: "DNA Replication"
+</score-3-example>
+
+<score-3-example>
+Reference title: "Assembly of the pre-replicative complex"
+Prediction title: "Assembly of the ORC complex at the origin of replication"
+</score-3-example>
+
+<score-2-example>
+Reference title: "Assembly of the pre-replicative complex"
+Prediction title: "Activation of the pre-replicative complex"
+</score-2-example>
+
+<score-1-example>
+Reference title: "Assembly of the pre-replicative complex"
+Prediction title: "DNA replication initiation"
+</score-1-example>
+
 
 ###Feedback:\
 """
@@ -84,7 +108,7 @@ meaningful semantic difference).
 _JUDGE_PROMPT_WITH_DESCRIPTION = """\
 ###Task Description:
 You are a biomedical expert evaluating whether a predicted biological pathway \
-description correctly captures the same Reactome pathway as the reference.
+description correctly captures the same ground-truth Reactome pathway as the reference.
 
 Each entry consists of a pathway name followed by a mechanistic description. \
 Evaluate whether the prediction identifies the same biological process with the \
@@ -102,12 +126,12 @@ capitalization, markdown symbols, trailing punctuation).
 
 1. Write a brief feedback assessing the semantic similarity between the \
 prediction and reference, strictly based on the score rubric below.
-2. After writing a feedback, write a score that is an integer between 1 and 5.
+2. After writing a feedback, write a score that is an integer between 1 and 4.
 3. The output format must look as follows: \
 "Feedback: (write a feedback) [RESULT] (an integer between 1 and 5)"
 4. Please do not generate any other opening, closing, or explanations.
 
-###Reference Pathway (Score 5):
+###Reference Pathway (Score 4):
 {reference}
 
 ###Predicted Pathway to Evaluate:
@@ -124,13 +148,36 @@ actors are wrong, or the biological outcome diverges meaningfully.
 Score 3: The prediction captures the same general biological category and the \
 title is acceptable, but the description is missing a key mechanism, important \
 molecular actors, or a critical relationship present in the reference.
-Score 4: The prediction correctly identifies the same pathway with the right \
-core mechanism and key molecules; only minor omissions, additions, or wording \
-differences that do not change the biological meaning.
-Score 5: The prediction fully captures the same specific biological process: \
+Score 4: The prediction fully captures the same specific biological process: \
 the title is semantically equivalent and the description preserves the same \
 molecular mechanism, key molecular actors, and biological outcome with no \
 important omissions or errors.
+
+###Examples:
+<score-4-example>
+Reference description: "Assembly of the pre-replicative complex. DNA replication pre-initiation in eukaryotic cells begins with the formation of the pre-replicative complex (pre-RC) during the late M phase and continues in the G1 phase of the mitotic cell cycle, a process also called DNA replication origin licensing. The association of initiation proteins (ORC, Cdc6, Cdt1, Mcm2-7) with the origin of replication in both S. cerevisiae and humans has been demonstrated by chromatin immunoprecipitation experiments. In S. cerevisiae, pre-replicative complexes are assembled from late M to G1. In mammalian cells as well, pre-replicative complexes are assembled from late M to G1, as shown by biochemical fractionation and immunostaining. There are significant sequence similarities among some of the proteins in the pre-replicative complex. The ORC subunits Orc1, Orc4 and Orc5 are homologous to one another and to Cdc6. The six subunits of the Mcm2-7 complex are homologous to one another. In addition, Orc1, Orc4, Orc5, Cdc6, and the Mcm2-7 subunits, are members of the AAA+ superfamily of ATPases. Since the initial identification of these pre-RC components other factors that participate in this complex have been found, including Cdt1 in human, Xenopus, S. pombe, and S. cerevisiae cells."
+Prediction description: "Formation of the pre-replicative complex. DNA replication pre-initiation in eukaryotic cells begins with the formation of the pre-replicative complex (pre-RC) during the late M phase and continues in the G1 phase of the mitotic cell cycle, a process also called DNA replication origin licensing. The association of initiation proteins (ORC, Cdc6, Cdt1, Mcm2-7) with the origin of replication in both S. cerevisiae and humans has been demonstrated by chromatin immunoprecipitation experiments. In S. cerevisiae, pre-replicative complexes are assembled from late M to G1. In mammalian cells as well, pre-replicative complexes are assembled from late M to G1, as shown by biochemical fractionation and immunostaining. There are significant sequence similarities among some of the proteins in the pre-replicative complex. The ORC subunits Orc1, Orc4 and Orc5 are homologous to one another and to Cdc6. The six subunits of the Mcm2-7 complex are homologous to one another. In addition, Orc1, Orc4, Orc5, Cdc6, and the Mcm2-7 subunits, are members of the AAA+ superfamily of ATPases. Since the initial identification of these pre-RC components other factors that participate in this complex have been found, including Cdt1 in human, Xenopus, S. pombe, and S. cerevisiae cells."
+</score-4-example>
+
+<score-3-example>
+Reference description: "Assembly of the pre-replicative complex. DNA replication pre-initiation in eukaryotic cells begins with the formation of the pre-replicative complex (pre-RC) during the late M phase and continues in the G1 phase of the mitotic cell cycle, a process also called DNA replication origin licensing. The association of initiation proteins (ORC, Cdc6, Cdt1, Mcm2-7) with the origin of replication in both S. cerevisiae and humans has been demonstrated by chromatin immunoprecipitation experiments. In S. cerevisiae, pre-replicative complexes are assembled from late M to G1. In mammalian cells as well, pre-replicative complexes are assembled from late M to G1, as shown by biochemical fractionation and immunostaining. There are significant sequence similarities among some of the proteins in the pre-replicative complex. The ORC subunits Orc1, Orc4 and Orc5 are homologous to one another and to Cdc6. The six subunits of the Mcm2-7 complex are homologous to one another. In addition, Orc1, Orc4, Orc5, Cdc6, and the Mcm2-7 subunits, are members of the AAA+ superfamily of ATPases. Since the initial identification of these pre-RC components other factors that participate in this complex have been found, including Cdt1 in human, Xenopus, S. pombe, and S. cerevisiae cells."
+Prediction description: "DNA Replication. Studies in the past decade have suggested that the basic mechanism of DNA replication initiation is conserved in all kingdoms of life. Initiation in unicellular eukaryotes, in particular Saccharomyces cerevisiae (budding yeast), is well understood, and has served as a model for studies of DNA replication initiation in multicellular eukaryotes, including humans. In general terms, the first step of initiation is the binding of the replication initiator to the origin of replication. The replicative helicase is then assembled onto the origin, usually by a helicase assembly factor. Either shortly before or shortly after helicase assembly, some local unwinding of the origin of replication occurs in a region rich in adenine and thymine bases (often termed a DNA unwinding element, DUE). The unwound region provides the substrate for primer synthesis and initiation of DNA replication. The best-defined eukaryotic origins are those of S. cerevisiae, which have well-conserved sequence elements for initiator binding, DNA unwinding and binding of accessory proteins. In multicellular eukaryotes, unlike S. cerevisiae, these loci appear not to be defined by the presence of a DNA sequence motif. Indeed, choice of replication origins in a multicellular eukaryote may vary with developmental stage and tissue type. In cell-free models of metazoan DNA replication, such as the one provided by Xenopus egg extracts, there are only limited DNA sequence specificity requirements for replication initiation (Kelly & Brown 2000; Bell & Dutta 2002; Marahrens & Stillman 1992; Cimbora & Groudine 2001; Mahbubani et al 1992, Hyrien & Mechali 1993)."
+</score-3-example>
+
+<score-3-example>
+Reference description: "Assembly of the pre-replicative complex. DNA replication pre-initiation in eukaryotic cells begins with the formation of the pre-replicative complex (pre-RC) during the late M phase and continues in the G1 phase of the mitotic cell cycle, a process also called DNA replication origin licensing. The association of initiation proteins (ORC, Cdc6, Cdt1, Mcm2-7) with the origin of replication in both S. cerevisiae and humans has been demonstrated by chromatin immunoprecipitation experiments. In S. cerevisiae, pre-replicative complexes are assembled from late M to G1. In mammalian cells as well, pre-replicative complexes are assembled from late M to G1, as shown by biochemical fractionation and immunostaining. There are significant sequence similarities among some of the proteins in the pre-replicative complex. The ORC subunits Orc1, Orc4 and Orc5 are homologous to one another and to Cdc6. The six subunits of the Mcm2-7 complex are homologous to one another. In addition, Orc1, Orc4, Orc5, Cdc6, and the Mcm2-7 subunits, are members of the AAA+ superfamily of ATPases. Since the initial identification of these pre-RC components other factors that participate in this complex have been found, including Cdt1 in human, Xenopus, S. pombe, and S. cerevisiae cells."
+Prediction description: "Assembly of the ORC complex at the origin of replication. Human ORC1 can associate with DNA origin of replication sites independently of other origin of replication complex (ORC) subunits (Hoshina et al. 2013; Eladl et al. 2021). ORC1 localizes to condensed chromosomes during early mitosis (M phase) and serves as a nucleating center for the assembly of the ORC and, subsequently, the pre-replication complex. ORC1 remains associated with late replication origins throughout late G1. Upon S phase entry, ORC1 undergoes ubiquitin-mediated degradation, leading to dissociation of the ORC from chromatin (Kara et al. 2015). Most human replication origins contain guanine (G)-rich sequences which may form G-quadruplex (G4) structures (Besnard et al. 2012) and these G4 structures may mediate the recognition of replication origins by ORC1 (Hoshina et al. 2013; Eladl et al. 2021). Besides binding to nucleosome-free replication origin DNA, ORC1 interacts with neighboring nucleosomes (Hizume et al. 2013), in particular with nucleosomes containing histone H4 dimethylated at lysine 21 (H4K20me2 mark), which is enriched at replication origins. Binding of ORC1 to H4K20me2 facilitates ORC1 binding to replication origins and ORC chromatin loading (Kuo et al. 2012, Zhang et al. 2015). ORC1 binding sites are universally associated with transcription start sites (TSSs) of coding and non-coding RNAs. Replication origins associated with moderate to high transcription level TSSs (belonging to coding RNAs) fire in early S phase, while those associated with low transcription level TSSs (belonging to non-coding RNAs) fire throughout the S phase (Dellino et al. 2013). ORC2 forms a heterodimer with ORC3, which is a prerequisite for the association of ORC5 and, subsequently, ORC4 (Ranjan and Gossen 2006; Siddiqui and Stillman 2007). ORC1 binds to the ORC(2-5) complex in the nucleus to form a stable ORC(1-5) complex (Radichev et al. 2006; Ghosh et al. 2011). ORC1 is necessary for the association of the ORC(2-5) complex to chromatin (Radichev et al. 2006). The ORC(2-5) complex exhibits a tightly autoinhibited conformation, with the winged-helix domain (WHD) of ORC2 completely blocking the central DNA-binding channel. Binding of ORC1 remodels the WHD of ORC2, moving it away from the central channel and partially relieving the autoinhibition (Cheng et al. 2020, Jaremko et al. 2020). ORC6 associates with the ORC(1-5) complex to form the ORC(1-6) complex (Ghosh et al. 2011). The association of ORC6 with the ORC(1-5) complex is weak and it frequently does not co-immunoprecipitate with the other ORC(1-5) subunits. ORC4 is the only ORC(1-5) subunit that was shown to directly bind to ORC6 (Radichev et al. 2006). Some ORC6 mutations reported in Meier-Gorlin syndrome were shown to interfere with ORC6 incorporation into the ORC (Balasov et al. 2015)."
+</score-3-example>
+
+<score-2-example>
+Reference description: "Assembly of the pre-replicative complex. DNA replication pre-initiation in eukaryotic cells begins with the formation of the pre-replicative complex (pre-RC) during the late M phase and continues in the G1 phase of the mitotic cell cycle, a process also called DNA replication origin licensing. The association of initiation proteins (ORC, Cdc6, Cdt1, Mcm2-7) with the origin of replication in both S. cerevisiae and humans has been demonstrated by chromatin immunoprecipitation experiments. In S. cerevisiae, pre-replicative complexes are assembled from late M to G1. In mammalian cells as well, pre-replicative complexes are assembled from late M to G1, as shown by biochemical fractionation and immunostaining. There are significant sequence similarities among some of the proteins in the pre-replicative complex. The ORC subunits Orc1, Orc4 and Orc5 are homologous to one another and to Cdc6. The six subunits of the Mcm2-7 complex are homologous to one another. In addition, Orc1, Orc4, Orc5, Cdc6, and the Mcm2-7 subunits, are members of the AAA+ superfamily of ATPases. Since the initial identification of these pre-RC components other factors that participate in this complex have been found, including Cdt1 in human, Xenopus, S. pombe, and S. cerevisiae cells."
+Prediction description: "Activation of the pre-replicative complex. In S. cerevisiae, two ORC subunits, Orc1 and Orc5, both bind ATP, and Orc1 in addition has ATPase activity. Both ATP binding and ATP hydrolysis appear to be essential functions in vivo. ATP binding by Orc1 is unaffected by the association of ORC with origin DNA (ARS) sequences, but ATP hydrolysis is ARS-dependent, being suppressed by associated double-stranded DNA and stimulated by associated single-stranded DNA. These data are consistent with the hypothesis that ORC functions as an ATPase switch, hydrolyzing bound ATP and changing state as DNA unwinds at the origin immediately before replication. It is attractive to speculate that ORC likewise functions as a switch as human pre-replicative complexes are activated, but human Orc proteins are not well enough characterized to allow the model to be critically tested. mRNAs encoding human orthologs of all six Orc proteins have been cloned, and ATP-binding amino acid sequence motifs have been identified in Orc1, Orc4, and Orc5. Interactions among proteins expressed from the cloned genes have been characterized, but the ATP-binding and hydrolyzing properties of these proteins and complexes of them have not been determined."
+</score-2-example>
+
+<score-1-example>
+Reference description: "Assembly of the pre-replicative complex. DNA replication pre-initiation in eukaryotic cells begins with the formation of the pre-replicative complex (pre-RC) during the late M phase and continues in the G1 phase of the mitotic cell cycle, a process also called DNA replication origin licensing. The association of initiation proteins (ORC, Cdc6, Cdt1, Mcm2-7) with the origin of replication in both S. cerevisiae and humans has been demonstrated by chromatin immunoprecipitation experiments. In S. cerevisiae, pre-replicative complexes are assembled from late M to G1. In mammalian cells as well, pre-replicative complexes are assembled from late M to G1, as shown by biochemical fractionation and immunostaining. There are significant sequence similarities among some of the proteins in the pre-replicative complex. The ORC subunits Orc1, Orc4 and Orc5 are homologous to one another and to Cdc6. The six subunits of the Mcm2-7 complex are homologous to one another. In addition, Orc1, Orc4, Orc5, Cdc6, and the Mcm2-7 subunits, are members of the AAA+ superfamily of ATPases. Since the initial identification of these pre-RC components other factors that participate in this complex have been found, including Cdt1 in human, Xenopus, S. pombe, and S. cerevisiae cells."
+Prediction description: "DNA replication initiation. DNA polymerases are not capable of de novo DNA synthesis and require synthesis of a primer, usually by a DNA-dependent RNA polymerase (primase) to begin DNA synthesis. In eukaryotic cells, the primer is synthesized by DNA polymerase alpha:primase. First, the DNA primase portion of this complex synthesizes approximately 6-10 nucleotides of RNA primer and then the DNA polymerase portion synthesizes an additional 20 nucleotides of DNA (Frick & Richardson 2002; Wang et al 1984)."
+</score-1-example>
 
 ###Feedback:\
 """
@@ -205,7 +252,7 @@ def extract_pathways_and_processes(file_path: Path, include_descriptions: bool =
 
             if not line.startswith("["):
                 if pathway_descriptions_match == "None":
-                    pathway_descriptions_match = line.strip()
+                    pathway_descriptions_match = line.strip() + '. '
                 else:
                     pathway_descriptions_match += " " + line.rstrip()
 
@@ -287,14 +334,14 @@ def _parse_judge_response(response: str) -> tuple[int | None, str]:
     if m:
         score = int(m.group(1))
         feedback = response[:m.start()].strip()
-        feedback = re.sub(r'^feedback:\s*', '', feedback, flags=re.IGNORECASE).strip()
+        feedback = re.sub(r'^feedback:\s*', '', feedback, flags=re.IGNORECASE).replace('\n', '').strip()
         return score, feedback
 
     m = _TRAILING_DIGIT.search(response)
     if m:
         score = int(m.group(1))
         feedback = response[:m.start()].strip()
-        feedback = re.sub(r'^feedback:\s*', '', feedback, flags=re.IGNORECASE).strip()
+        feedback = re.sub(r'^feedback:\s*', '', feedback, flags=re.IGNORECASE).replace('\n', '').strip()
         return score, feedback
 
     return None, response
