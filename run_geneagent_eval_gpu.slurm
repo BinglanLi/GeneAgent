@@ -28,7 +28,7 @@ LLMS=(
 )
 LLMS_LEN=${#LLMS[@]}
 # Define input file parameters
-NOISE_LEVELS=(20 40 60 80)
+NOISE_LEVELS=(0 20 40 60 80)
 NOISE_LEVELS_LEN=${#NOISE_LEVELS[@]}
 PARTS=(1 2)
 PARTS_LEN=${#PARTS[@]}
@@ -55,6 +55,7 @@ PARTS_LEN=${#PARTS[@]}
 #         --input "Datasets/AlzKB/toy_alzkb_noise_${NOISE_LEVEL}_1.csv" "Datasets/AlzKB/toy_alzkb_noise_${NOISE_LEVEL}_2.csv" \
 #         -o "Outputs/${LLM}/toy_alzkb_noise_${NOISE_LEVEL}_combined" \
 #         --llm "$LLM" \
+#         --judge-llm "azure-claude-haiku-4-5" \
 #         || exit 1
 
 #     echo -e "\n--- Descriptions Included Evaluation ---"
@@ -63,6 +64,7 @@ PARTS_LEN=${#PARTS[@]}
 #         -o "Outputs/${LLM}/toy_alzkb_noise_${NOISE_LEVEL}_combined" \
 #         --llm "$LLM" \
 #         --include-descriptions \
+#         --judge-llm "azure-claude-haiku-4-5" \
 #         || exit 1
 
 # done
@@ -95,19 +97,19 @@ export OLLAMA_MAX_LOADED_MODELS=1        # Load only one model at a time
 export OLLAMA_NUM_PARALLEL=1             # Limit parallel requests
 export OLLAMA_MAX_QUEUE=512              # Increase request queue size
 
-# Start Ollama server if needed
-echo -e "\n=== Starting Ollama Server ==="
-~/ollama/ollama-manager.sh start
+# # Start Ollama server if needed
+# echo -e "\n=== Starting Ollama Server ==="
+# ~/ollama/ollama-manager.sh start
 
-# Step 1: Run GeneAgent evaluation
-echo -e "\n=== Step 1: Running GeneAgent ==="
-python run_geneagent.py \
-    --input "$INPUT_FILE" \
-    --llm "$LLM" \
-    || exit 1
-# Stop Ollama server
-echo -e "\n=== Stopping Ollama Server ==="
-~/ollama/ollama-manager.sh stop
+# # Step 1: Run GeneAgent
+# echo -e "\n=== Step 1: Running GeneAgent ==="
+# python run_geneagent.py \
+#     --input "$INPUT_FILE" \
+#     --llm "$LLM" \
+#     || exit 1
+# # Stop Ollama server
+# echo -e "\n=== Stopping Ollama Server ==="
+# ~/ollama/ollama-manager.sh stop
 
 # Step 2: Evaluate predictions
 echo -e "\n=== Step 2: Evaluating Predictions ==="
@@ -115,6 +117,7 @@ echo -e "\n--- Name Only Evaluation ---"
 python evaluate_pathway_predictions.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
+    --judge-llm "azure-gpt-4o" \
     || exit 1
 
 echo -e "\n--- Descriptions Included Evaluation ---"
@@ -122,6 +125,7 @@ python evaluate_pathway_predictions.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
     --include-descriptions \
+    --judge-llm "azure-gpt-4o" \
     || exit 1
 
 
