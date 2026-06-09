@@ -148,7 +148,6 @@ Before running GeneAgent, you need to configure your LLM provider credentials.
    # install
    curl -L https://ollama.com/download/ollama-linux-amd64.tar.zst -o ollama-linux-amd64.tar.zst
    # extract
-   mkdir -p ~/ollama
    zstd -d ollama-linux-amd64.tar.zst -c | tar -xf - -C ~/ollama
    ```
 
@@ -170,9 +169,11 @@ Before running GeneAgent, you need to configure your LLM provider credentials.
 
 4. Download models before use
    ```bash
-   # Pull the models you want to use (examples)
-   ollama pull llama3.3:70b
-   ollama pull qwen2.5:14b
+   # Pull the models you want to use
+   ollama pull gpt-oss:20b
+   ollama pull gemma4:26b
+   ollama pull llama4:scout
+   ollama pull mixtral:8x7b
 
    # Verify available models
    ollama list
