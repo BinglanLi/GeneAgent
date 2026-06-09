@@ -168,7 +168,19 @@ Before running GeneAgent, you need to configure your LLM provider credentials.
    ollama serve &
    ```
 
-4. (Optional) Create a simple script to manage the Ollama server without `sudo`.
+4. Download models before use
+   ```bash
+   # Pull the models you want to use (examples)
+   ollama pull llama3.3:70b
+   ollama pull qwen2.5:14b
+
+   # Verify available models
+   ollama list
+   ```
+   > [!NOTE]
+   > Models must be pulled explicitly before use. Ollama will return an error if you reference a model that has not been downloaded.
+
+5. (Optional) Create a simple script to manage the Ollama server without `sudo`.
    Create a new file named `ollama-manager.sh` with the following content under the `~/ollama/` folder. 
    ```bash
    #!/bin/bash
