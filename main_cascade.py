@@ -84,11 +84,12 @@ I have finished the verification for the revised summary. Here is the verificati
 Please modify the summary according to the verification report again.
 """
 
-summarization_instruction = """ 
-If the analytical narratives of genes can't directly support or related to the updated process name, you must propose a new brief biological process name from the analytical texts. 
+summarization_instruction = """
+If the analytical narratives of genes can't directly support or related to the updated process name, you must propose a new brief biological process name from the analytical texts.
 Otherwise, you must retain the updated process name and only can make a grammar revision.
-IF the claim is supported, you must complement the narratives by using the standard evidence of gene set functions (or gene summaries) in the verification report but don't change the updated process name. 
+IF the claim is supported, you must complement the narratives by using the standard evidence of gene set functions (or gene summaries) in the verification report but don't change the updated process name.
 IF the claim is not supported, do not mention any statement like "... was not directly confirmed by..."
+Put the updated process name at the top of the analysis as "Process: <name>".
 Be concise, do not use unnecessary format like **, only return the concise texts.
 """
 
