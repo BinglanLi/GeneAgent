@@ -365,7 +365,7 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
         print("=====Saving Baseline Summary=====")
         with open(baseline_file,"a") as f_summary:
             f_summary.write(f"[{ID}]\n")
-            f_summary.write(summary+"\n")
+            f_summary.write(summary.strip()+"\n")
             f_summary.write("//\n")
         
         # send genes and process name to GPT-4 for topic verification.
@@ -477,7 +477,7 @@ def GeneAgent(ID, genes, llm_model, dataset_name, output_dir: Path, resume: bool
 
         with open(final_file,"a") as f_final:
             f_final.write(f"[{ID}]\n")
-            f_final.write(update+"\n")
+            f_final.write(update.strip()+"\n")
             f_final.write("//\n")
                 
         # Write a totals line for this ID
