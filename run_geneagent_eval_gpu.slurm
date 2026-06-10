@@ -2,7 +2,7 @@
 #SBATCH --job-name=geneagent_gpu
 #SBATCH --output=logs/geneagent_gpu_%A_%a.out
 #SBATCH --error=logs/geneagent_gpu_%A_%a.err
-#SBATCH --array=15            # GPU models (GPU required) * noise levels (0, 20, 40, 60, 80) * parts (1, 2) = 3*5*[]= tasks
+#SBATCH --array=15            # GPU models (GPU required) * noise levels (0, 20, 40, 60, 80) * parts (1 .. 23) = 3*5*23 = 345 tasks
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
@@ -19,7 +19,7 @@ module load cuda12.6
 LLMS=(
     "gpt-oss:20b"
     "gemma4:26b"
-    "mixtral:8x7b"
+    "mixtral:8x22b"
 )
 JUDGE_LLM="azure-claude-haiku-4-5"
 LLMS_LEN=${#LLMS[@]}
