@@ -5,10 +5,10 @@
 #SBATCH --array=15            # GPU models (GPU required) * noise levels (0, 20, 40, 60, 80) * parts (1 .. 23) = 3*5*23 = 345 tasks
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
-#SBATCH --time=48:00:00
+#SBATCH --mem=120G
+#SBATCH --time=12:00:00
 #SBATCH --partition=gpu       # GPU partition
-#SBATCH --gres=gpu:a100:1          # Request 1 A100 or H100 GPU
+#SBATCH --gres=gpu:a100:2          # Request 1 A100 or H100 GPU
 
 
 echo "Load modules..."
