@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to run GeneAgent on full_set and reduced_set columns from selected AlzKB pathways, e.g., selected_pathways_with_descriptions.csv
-and prepare for evaluation.
+Script to run GeneAgent on gene set columns (full_set, reduced_set, noise_*) from
+an AlzKB pathways CSV and prepare for evaluation.
 """
 
 import pandas as pd
@@ -13,6 +13,16 @@ import argparse
 import tempfile
 import shutil
 import signal
+
+
+def detect_gene_set_columns(df: pd.DataFrame) -> list:
+    """Return gene set columns in order: full_set, reduced_set, then noise_* sorted by level."""
+    cols = [c for c in ['full_set', 'reduced_set'] if c in df.columns]
+    noise_cols = sorted(
+        (c for c in df.columns if c.startswith('noise_')),
+        key=lambda c: int(c.split('_')[1])
+    )
+    return cols + noise_cols
 
 
 def parse_gene_list(gene_str):
@@ -108,115 +118,96 @@ def run_main_cascade(input_csv: Path, llm_model: str, output_dir: Path, dataset_
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run GeneAgent on full_set and reduced_set columns",
+        description="Run GeneAgent on gene set columns (full_set, reduced_set, noise_*)",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument(
         '--input', '-i',
         type=str,
         help='Path to input CSV file'
     )
-    
+
     parser.add_argument(
         '--llm', '-l',
         type=str,
         default='gpt-4o',
         help='LLM model name (default: gpt-4o)'
     )
-    
+
     parser.add_argument(
         '--output-dir', '-o',
         type=str,
         default=None,
         help='Output directory (default: Outputs/{llm}/{dataset_name})'
     )
-    
+
     parser.add_argument(
-        '--skip-full',
-        action='store_true',
-        help='Skip processing full_set (if already done)'
+        '--skip-columns',
+        nargs='*',
+        default=[],
+        metavar='COL',
+        help='Column names to skip (e.g. --skip-columns full_set noise_40)'
     )
-    
-    parser.add_argument(
-        '--skip-reduced',
-        action='store_true',
-        help='Skip processing reduced_set (if already done)'
-    )
-    
+
     parser.add_argument(
         '--limit',
         type=int,
         default=None,
         help='Limit number of pathways to process (for testing)'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Resolve paths
     input_file = Path(args.input).resolve()
     if not input_file.exists():
         raise FileNotFoundError(f"Input file not found: {input_file}")
-    
-    # Set up output directories
+
+    # Set up output directory
     dataset_name = input_file.stem
     if args.output_dir:
         output_dir = Path(args.output_dir).resolve()
     else:
         base_dir = Path(__file__).absolute().parent
         output_dir = base_dir / "Outputs" / args.llm / dataset_name
-    
-    full_output_dir = output_dir / "full_set"
-    reduced_output_dir = output_dir / "reduced_set"
-    
+
     # Create temporary directory for prepared CSVs
     temp_dir = Path(tempfile.mkdtemp(prefix="pathway_eval_"))
-    
+
     try:
-        # Read original CSV to get Pathway names for reference
         original_df = pd.read_csv(input_file)
         if args.limit:
             original_df = original_df.head(args.limit)
-        
-        # Prepare and run for full_set
-        if not args.skip_full:
-            full_csv = temp_dir / "full_set.csv"
-            prepare_csv(input_file, 'full_set', full_csv)
+
+        columns = detect_gene_set_columns(original_df)
+        skip = set(args.skip_columns or [])
+        columns = [c for c in columns if c not in skip]
+
+        print(f"Gene set columns to process: {columns}")
+
+        for col in columns:
+            col_csv = temp_dir / f"{col}.csv"
+            prepare_csv(input_file, col, col_csv)
             if args.limit:
-                # Re-read and limit
-                df_full = pd.read_csv(full_csv)
-                df_full.head(args.limit).to_csv(full_csv, index=False)
-            run_main_cascade(full_csv, args.llm, full_output_dir, "full_set")
-        else:
-            print("Skipping full_set processing")
-        
-        # Prepare and run for reduced_set
-        if not args.skip_reduced:
-            reduced_csv = temp_dir / "reduced_set.csv"
-            prepare_csv(input_file, 'reduced_set', reduced_csv)
-            if args.limit:
-                # Re-read and limit
-                df_reduced = pd.read_csv(reduced_csv)
-                df_reduced.head(args.limit).to_csv(reduced_csv, index=False)
-            run_main_cascade(reduced_csv, args.llm, reduced_output_dir, "reduced_set")
-        else:
-            print("Skipping reduced_set processing")
-        
+                df_col = pd.read_csv(col_csv)
+                df_col.head(args.limit).to_csv(col_csv, index=False)
+            run_main_cascade(col_csv, args.llm, output_dir / col, col)
+
         # Save reference file with Pathway names for evaluation
         reference_file = output_dir / "reference_pathways.csv"
         original_df[['Pathway']].to_csv(reference_file, index=False)
         print(f"\nSaved reference pathways to: {reference_file}")
-        
+
         print(f"\n{'='*60}")
         print("Processing complete!")
-        print(f"Full set results: {full_output_dir}")
-        print(f"Reduced set results: {reduced_output_dir}")
+        for col in columns:
+            print(f"  {col} results: {output_dir / col}")
         print(f"Reference pathways: {reference_file}")
         print(f"{'='*60}")
         print("\nNext step: Run evaluate_pathway_predictions.py to compare predictions against ground truth.")
-        
+
     finally:
-        # Clean up temporary directory
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 

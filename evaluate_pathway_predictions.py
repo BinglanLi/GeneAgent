@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Evaluate GeneAgent predictions against ground truth Pathway names.
-Compares full_set and reduced_set predictions using ROUGE scores, semantic
-similarity (MedCPT), and an optional LLM-as-judge score.
+Compares full_set, reduced_set, and noise_* predictions using ROUGE scores,
+semantic similarity (MedCPT), and an optional LLM-as-judge score.
 """
 
 import re
@@ -184,6 +184,16 @@ Prediction description: "DNA replication initiation. DNA polymerases are not cap
 
 _RESULT_PATTERN = re.compile(r'\[RESULT\]\s*([1-5])', re.IGNORECASE)
 _TRAILING_DIGIT = re.compile(r'(?:score[:\s]+|result[:\s]+)?([1-5])\s*$', re.IGNORECASE)
+
+
+def detect_gene_set_columns(df: pd.DataFrame) -> list:
+    """Return gene set columns in order: full_set, reduced_set, then noise_* sorted by level."""
+    cols = [c for c in ['full_set', 'reduced_set'] if c in df.columns]
+    noise_cols = sorted(
+        (c for c in df.columns if c.startswith('noise_')),
+        key=lambda c: int(c.split('_')[1])
+    )
+    return cols + noise_cols
 
 
 # ---------------------------------------------------------------------------
@@ -478,29 +488,21 @@ def main():
     else:
         output_dir = results_dir / input_files[0].stem
 
-    # Accumulate across input files
-    combined_full_reference = []
-    combined_full_predictions = []
-    combined_full_pathway_descriptions = []
-    combined_reduced_reference = []
-    combined_reduced_predictions = []
-    combined_reduced_pathway_descriptions = []
+    # Accumulate data per gene set column across all input files
+    # sets_data[col] = {'reference': [...], 'predictions': [...], 'descriptions': [...]}
+    sets_data = {}
     reference_pathway_descriptions = {}
 
     for input_file in input_files:
         dataset_name = input_file.stem
         print(f"Processing dataset: {dataset_name}")
 
-        full_results_dir = results_dir / dataset_name / "full_set"
-        reduced_results_dir = results_dir / dataset_name / "reduced_set"
-
-        full_final_file = full_results_dir / "Final_Response_GeneAgent.txt"
-        reduced_final_file = reduced_results_dir / "Final_Response_GeneAgent.txt"
+        df_input = pd.read_csv(input_file)
+        gene_set_cols = detect_gene_set_columns(df_input)
 
         if args.include_descriptions:
             print(f"Loading pathway descriptions from {input_file}...")
             pattern = r'\([^)]*\)'
-            df_input = pd.read_csv(input_file)
             if 'Pathway' in df_input.columns and 'Pathway_Description' in df_input.columns:
                 for _, row in df_input.iterrows():
                     pathway_name = row.get('Pathway', '')
@@ -513,70 +515,43 @@ def main():
             else:
                 print(f"Warning: 'Pathway' and 'Pathway_Description' columns not found in {input_file}.")
 
-        try:
-            full_reference, full_predictions, full_pathway_descriptions = extract_pathways_and_processes(full_final_file, args.include_descriptions)
-            print(f"Extracted {len(full_reference)} reference / {len(full_predictions)} predicted terms from full_set for {dataset_name}")
-            combined_full_reference.extend(full_reference)
-            combined_full_predictions.extend(full_predictions)
-            combined_full_pathway_descriptions.extend(full_pathway_descriptions)
-        except FileNotFoundError as e:
-            print(f"Error: {e}")
-            print(f"Skipping full_set evaluation for {dataset_name}")
+        for col in gene_set_cols:
+            col_final_file = results_dir / dataset_name / col / "Final_Response_GeneAgent.txt"
+            try:
+                ref, pred, desc = extract_pathways_and_processes(col_final_file, args.include_descriptions)
+                print(f"Extracted {len(ref)} reference / {len(pred)} predicted terms from {col} for {dataset_name}")
+                if col not in sets_data:
+                    sets_data[col] = {'reference': [], 'predictions': [], 'descriptions': []}
+                sets_data[col]['reference'].extend(ref)
+                sets_data[col]['predictions'].extend(pred)
+                sets_data[col]['descriptions'].extend(desc)
+            except FileNotFoundError as e:
+                print(f"Warning: {e}\nSkipping {col} evaluation for {dataset_name}")
 
-        try:
-            reduced_reference, reduced_predictions, reduced_pathway_descriptions = extract_pathways_and_processes(reduced_final_file, args.include_descriptions)
-            print(f"Extracted {len(reduced_reference)} reference / {len(reduced_predictions)} predicted terms from reduced_set for {dataset_name}")
-            combined_reduced_reference.extend(reduced_reference)
-            combined_reduced_predictions.extend(reduced_predictions)
-            combined_reduced_pathway_descriptions.extend(reduced_pathway_descriptions)
-        except FileNotFoundError as e:
-            print(f"Warning: {e}")
-            print(f"Skipping reduced_set evaluation for {dataset_name}")
-
-    full_reference = combined_full_reference
-    full_predictions = combined_full_predictions
-    full_pathway_descriptions = combined_full_pathway_descriptions
-    reduced_reference = combined_reduced_reference
-    reduced_predictions = combined_reduced_predictions
-    reduced_pathway_descriptions = combined_reduced_pathway_descriptions
-
-    # Filter None entries
-    full_reference_none_indices = [i for i, _ in enumerate(full_reference) if _ == "None"]
-    if args.include_descriptions:
-        full_reference_description_none_indices = [
-            i for i, ref in enumerate(full_reference)
-            if reference_pathway_descriptions.get(ref) == "None"
-        ]
-        full_reference_none_indices += full_reference_description_none_indices
-    full_predictions_none_indices = [i for i, _ in enumerate(full_predictions) if _ == "None"]
-
-    reduced_reference_none_indices = [i for i, _ in enumerate(reduced_reference) if _ == "None"]
-    if args.include_descriptions:
-        reduced_reference_description_none_indices = [
-            i for i, ref in enumerate(reduced_reference)
-            if reference_pathway_descriptions.get(ref) == "None"
-        ]
-        reduced_reference_none_indices += reduced_reference_description_none_indices
-    reduced_predictions_none_indices = [i for i, _ in enumerate(reduced_predictions) if _ == "None"]
-
-    full_none_indices = set(full_reference_none_indices + full_predictions_none_indices)
-    reduced_none_indices = set(reduced_reference_none_indices + reduced_predictions_none_indices)
-
-    print(f"Excluding {len(full_none_indices)} None values from the full set")
-    print(f"Excluding {len(reduced_none_indices)} None values from the reduced set")
-
-    full_reference = [ref for i, ref in enumerate(full_reference) if i not in full_none_indices]
-    full_predictions = [pred for i, pred in enumerate(full_predictions) if i not in full_none_indices]
-    full_pathway_descriptions = [desc for i, desc in enumerate(full_pathway_descriptions) if i not in full_none_indices]
-    reduced_reference = [ref for i, ref in enumerate(reduced_reference) if i not in reduced_none_indices]
-    reduced_predictions = [pred for i, pred in enumerate(reduced_predictions) if i not in reduced_none_indices]
-    reduced_pathway_descriptions = [desc for i, desc in enumerate(reduced_pathway_descriptions) if i not in reduced_none_indices]
+    # -----------------------------------------------------------------------
+    # Filter None entries per column
+    # -----------------------------------------------------------------------
+    for col in list(sets_data.keys()):
+        data = sets_data[col]
+        ref_none = {i for i, r in enumerate(data['reference']) if r == "None"}
+        if args.include_descriptions:
+            ref_none |= {i for i, r in enumerate(data['reference'])
+                         if reference_pathway_descriptions.get(r) == "None"}
+        pred_none = {i for i, p in enumerate(data['predictions']) if p == "None"}
+        none_idx = ref_none | pred_none
+        print(f"Excluding {len(none_idx)} None values from {col}")
+        sets_data[col]['reference'] = [r for i, r in enumerate(data['reference']) if i not in none_idx]
+        sets_data[col]['predictions'] = [p for i, p in enumerate(data['predictions']) if i not in none_idx]
+        sets_data[col]['descriptions'] = [d for i, d in enumerate(data['descriptions']) if i not in none_idx]
 
     if args.include_descriptions:
-        full_reference = [f"{ref} {reference_pathway_descriptions[ref]}" for ref in full_reference]
-        full_predictions = [f"{pred} {desc}" for pred, desc in zip(full_predictions, full_pathway_descriptions)]
-        reduced_reference = [f"{ref} {reference_pathway_descriptions[ref]}" for ref in reduced_reference]
-        reduced_predictions = [f"{pred} {desc}" for pred, desc in zip(reduced_predictions, reduced_pathway_descriptions)]
+        for col, data in sets_data.items():
+            sets_data[col]['reference'] = [
+                f"{r} {reference_pathway_descriptions[r]}" for r in data['reference']
+            ]
+            sets_data[col]['predictions'] = [
+                f"{p} {d}" for p, d in zip(data['predictions'], data['descriptions'])
+            ]
 
     # -----------------------------------------------------------------------
     # ROUGE
@@ -585,32 +560,24 @@ def main():
     metrics = ["rouge1", "rouge2", "rougeL"]
     scorer = rouge_scorer.RougeScorer(metrics, use_stemmer=True)
     results = []
+    col_result_ranges = {}  # col -> (start_idx, end_idx) in results list
 
-    if full_predictions:
-        full_rouge = calculate_rouge_scores(full_reference, full_predictions, scorer)
-        for i, (ref, pred, rouge_scores) in enumerate(zip(full_reference, full_predictions, full_rouge)):
+    for col, data in sets_data.items():
+        if not data['predictions']:
+            continue
+        start_idx = len(results)
+        rouge_scores_list = calculate_rouge_scores(data['reference'], data['predictions'], scorer)
+        for i, (ref, pred, rs) in enumerate(zip(data['reference'], data['predictions'], rouge_scores_list)):
             result = {
                 "pathway_id": i,
                 "reference": ref,
-                "prediction_type": "full_set",
+                "prediction_type": col,
                 "prediction": pred,
             }
             for metric in metrics:
-                result[metric] = rouge_scores[metric]
+                result[metric] = rs[metric]
             results.append(result)
-
-    if reduced_predictions:
-        reduced_rouge = calculate_rouge_scores(reduced_reference, reduced_predictions, scorer)
-        for i, (ref, pred, rouge_scores) in enumerate(zip(reduced_reference, reduced_predictions, reduced_rouge)):
-            result = {
-                "pathway_id": i,
-                "reference": ref,
-                "prediction_type": "reduced_set",
-                "prediction": pred,
-            }
-            for metric in metrics:
-                result[metric] = rouge_scores[metric]
-            results.append(result)
+        col_result_ranges[col] = (start_idx, len(results))
 
     # -----------------------------------------------------------------------
     # MedCPT semantic similarity
@@ -621,21 +588,14 @@ def main():
             model = AutoModel.from_pretrained("ncbi/MedCPT-Query-Encoder")
             tokenizer = AutoTokenizer.from_pretrained("ncbi/MedCPT-Query-Encoder")
 
-            if full_predictions:
-                print("Calculating semantic similarity for full_set...")
-                full_semantic = calculate_semantic_similarity(full_reference, full_predictions, model, tokenizer)
-                for i, score in enumerate(full_semantic):
-                    if i < len(results) and results[i]["prediction_type"] == "full_set":
-                        results[i]["semantic_similarity"] = score
-
-            if reduced_predictions:
-                print("Calculating semantic similarity for reduced_set...")
-                reduced_semantic = calculate_semantic_similarity(reduced_reference, reduced_predictions, model, tokenizer)
-                full_count = len(full_predictions) if full_predictions else 0
-                for i, score in enumerate(reduced_semantic):
-                    idx = full_count + i
-                    if idx < len(results) and results[idx]["prediction_type"] == "reduced_set":
-                        results[idx]["semantic_similarity"] = score
+            for col, data in sets_data.items():
+                if not data['predictions'] or col not in col_result_ranges:
+                    continue
+                print(f"Calculating semantic similarity for {col}...")
+                scores = calculate_semantic_similarity(data['reference'], data['predictions'], model, tokenizer)
+                start, _ = col_result_ranges[col]
+                for i, score in enumerate(scores):
+                    results[start + i]["semantic_similarity"] = score
 
         except Exception as e:
             print(f"Warning: Could not calculate semantic similarity: {e}")
@@ -649,27 +609,17 @@ def main():
         mode_label = "with_description" if args.include_descriptions else "name_only"
         print(f"Judge mode: {mode_label}")
 
-        if full_predictions:
-            print("Scoring full_set predictions...")
-            full_judge = calculate_llm_judge_scores(
-                full_reference, full_predictions, args.judge_llm, args.include_descriptions
+        for col, data in sets_data.items():
+            if not data['predictions'] or col not in col_result_ranges:
+                continue
+            print(f"Scoring {col} predictions...")
+            judge_results = calculate_llm_judge_scores(
+                data['reference'], data['predictions'], args.judge_llm, args.include_descriptions
             )
-            for i, (score, feedback) in enumerate(full_judge):
-                if i < len(results) and results[i]["prediction_type"] == "full_set":
-                    results[i]["llm_judge_score"] = score
-                    results[i]["llm_judge_feedback"] = feedback
-
-        if reduced_predictions:
-            print("Scoring reduced_set predictions...")
-            reduced_judge = calculate_llm_judge_scores(
-                reduced_reference, reduced_predictions, args.judge_llm, args.include_descriptions
-            )
-            full_count = len(full_predictions) if full_predictions else 0
-            for i, (score, feedback) in enumerate(reduced_judge):
-                idx = full_count + i
-                if idx < len(results) and results[idx]["prediction_type"] == "reduced_set":
-                    results[idx]["llm_judge_score"] = score
-                    results[idx]["llm_judge_feedback"] = feedback
+            start, _ = col_result_ranges[col]
+            for i, (score, feedback) in enumerate(judge_results):
+                results[start + i]["llm_judge_score"] = score
+                results[start + i]["llm_judge_feedback"] = feedback
 
     # -----------------------------------------------------------------------
     # Summary
@@ -680,21 +630,27 @@ def main():
     print("EVALUATION RESULTS SUMMARY")
     print("=" * 60)
 
+    col_order = [c for c in ['full_set', 'reduced_set'] if c in sets_data]
+    col_order += sorted(
+        (c for c in sets_data if c not in {'full_set', 'reduced_set'}),
+        key=lambda c: int(c.split('_')[1]) if c.startswith('noise_') else 0
+    )
+
     if len(df_results) > 0:
-        for pred_type in ["full_set", "reduced_set"]:
-            df_type = df_results[df_results["prediction_type"] == pred_type]
-            if len(df_type) == 0:
+        for col in col_order:
+            df_col = df_results[df_results["prediction_type"] == col]
+            if len(df_col) == 0:
                 continue
 
-            print(f"\n{pred_type.upper()}:")
-            print(f"  Number of predictions: {len(df_type)}")
+            print(f"\n{col.upper()}:")
+            print(f"  Number of predictions: {len(df_col)}")
 
             for metric in metrics:
-                if metric in df_type.columns:
-                    print(f"  {metric} mean: {df_type[metric].mean():.4f}")
+                if metric in df_col.columns:
+                    print(f"  {metric} mean: {df_col[metric].mean():.4f}")
 
-            if "semantic_similarity" in df_type.columns:
-                ss = df_type["semantic_similarity"].dropna()
+            if "semantic_similarity" in df_col.columns:
+                ss = df_col["semantic_similarity"].dropna()
                 ss_sem = ss.std(ddof=1) / np.sqrt(len(ss))
                 ss_ci = stats.t.interval(0.95, df=len(ss) - 1, loc=ss.mean(), scale=ss_sem)
                 print(f"  Semantic Similarity (MedCPT) avg: {ss.mean():.4f}")
@@ -702,8 +658,8 @@ def main():
                 print(f"  Semantic Similarity (MedCPT) min: {ss.min():.4f}")
                 print(f"  Semantic Similarity (MedCPT) max: {ss.max():.4f}")
 
-            if "llm_judge_score" in df_type.columns:
-                js = pd.to_numeric(df_type["llm_judge_score"], errors="coerce").dropna()
+            if "llm_judge_score" in df_col.columns:
+                js = pd.to_numeric(df_col["llm_judge_score"], errors="coerce").dropna()
                 if len(js) > 1:
                     js_sem = js.std(ddof=1) / np.sqrt(len(js))
                     js_ci = stats.t.interval(0.95, df=len(js) - 1, loc=js.mean(), scale=js_sem)
@@ -713,25 +669,26 @@ def main():
                     print(f"  LLM Judge Score min: {js.min():.0f}  max: {js.max():.0f}")
                     print(f"  LLM Judge Score distribution: {dist}")
 
-        # Comparison across conditions
+        # Comparison: each non-full_set column vs full_set
         df_full = df_results[df_results["prediction_type"] == "full_set"]
-        df_reduced = df_results[df_results["prediction_type"] == "reduced_set"]
-        if len(df_full) > 0 and len(df_reduced) > 0:
-            print("\nCOMPARISON (full_set vs reduced_set):")
-            for metric in metrics:
-                if metric in df_full.columns and metric in df_reduced.columns:
-                    fm, rm = df_full[metric].mean(), df_reduced[metric].mean()
-                    print(f"  {metric}: full={fm:.4f}  reduced={rm:.4f}  diff={fm - rm:+.4f}")
-
-            if "semantic_similarity" in df_full.columns and "semantic_similarity" in df_reduced.columns:
-                fm = df_full["semantic_similarity"].mean()
-                rm = df_reduced["semantic_similarity"].mean()
-                print(f"  Semantic Similarity: full={fm:.4f}  reduced={rm:.4f}  diff={fm - rm:+.4f}")
-
-            if "llm_judge_score" in df_full.columns and "llm_judge_score" in df_reduced.columns:
-                fm = pd.to_numeric(df_full["llm_judge_score"], errors="coerce").mean()
-                rm = pd.to_numeric(df_reduced["llm_judge_score"], errors="coerce").mean()
-                print(f"  LLM Judge Score:      full={fm:.4f}  reduced={rm:.4f}  diff={fm - rm:+.4f}")
+        if len(df_full) > 0:
+            for col in [c for c in col_order if c != "full_set"]:
+                df_col = df_results[df_results["prediction_type"] == col]
+                if len(df_col) == 0:
+                    continue
+                print(f"\nCOMPARISON (full_set vs {col}):")
+                for metric in metrics:
+                    if metric in df_full.columns and metric in df_col.columns:
+                        fm, cm = df_full[metric].mean(), df_col[metric].mean()
+                        print(f"  {metric}: full={fm:.4f}  {col}={cm:.4f}  diff={fm - cm:+.4f}")
+                if "semantic_similarity" in df_full.columns and "semantic_similarity" in df_col.columns:
+                    fm = df_full["semantic_similarity"].mean()
+                    cm = df_col["semantic_similarity"].mean()
+                    print(f"  Semantic Similarity: full={fm:.4f}  {col}={cm:.4f}  diff={fm - cm:+.4f}")
+                if "llm_judge_score" in df_full.columns and "llm_judge_score" in df_col.columns:
+                    fm = pd.to_numeric(df_full["llm_judge_score"], errors="coerce").mean()
+                    cm = pd.to_numeric(df_col["llm_judge_score"], errors="coerce").mean()
+                    print(f"  LLM Judge Score:      full={fm:.4f}  {col}={cm:.4f}  diff={fm - cm:+.4f}")
 
     # -----------------------------------------------------------------------
     # Save
@@ -739,9 +696,9 @@ def main():
     if args.output_file:
         output_file = Path(args.output_file)
     elif args.include_descriptions:
-        output_file = output_dir / "evaluation_results_descriptionsIncluded.csv"
+        output_file = output_dir / "evaluation_results_analyticNarratives.csv"
     else:
-        output_file = output_dir / "evaluation_results_nameOnly.csv"
+        output_file = output_dir / "evaluation_results_processNames.csv"
 
     df_results.to_csv(output_file, index=False)
     print(f"\nDetailed results saved to: {output_file}")
