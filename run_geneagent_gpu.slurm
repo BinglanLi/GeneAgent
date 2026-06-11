@@ -4,11 +4,11 @@
 #SBATCH --error=logs/geneagent_gpu_%A_%a.err
 #SBATCH --array=0-68          # GPU models (3) * parts (23) = 69 tasks
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=120G
-#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=60G
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu       # GPU partition
-#SBATCH --gres=gpu:a100:2          # Request 1 A100 or H100 GPU
+#SBATCH --gres=gpu:a100:1          # Request 1 A100 or H100 GPU
 
 
 echo "Load modules..."
