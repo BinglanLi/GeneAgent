@@ -22,7 +22,7 @@ PARTS_LEN=${#PARTS[@]}
 
 LLM=${LLMS[$((SLURM_ARRAY_TASK_ID / PARTS_LEN))]}
 PART=${PARTS[$((SLURM_ARRAY_TASK_ID % PARTS_LEN))]}
-INPUT_FILE="Datasets/AlzKB/sampled_noise_${PART}.csv"
+INPUT_FILE="Datasets/AlzKB/sampled_noise_part${PART}.csv"
 BASE_DIR="/home/lib/GeneAgent"
 
 # Setup
