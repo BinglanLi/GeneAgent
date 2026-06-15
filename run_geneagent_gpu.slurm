@@ -2,7 +2,7 @@
 #SBATCH --job-name=geneagent_gpu
 #SBATCH --output=logs/geneagent_gpu_%A_%a.out
 #SBATCH --error=logs/geneagent_gpu_%A_%a.err
-#SBATCH --array=0-68          # GPU models (3) * parts (23) = 69 tasks
+#SBATCH --array=0-71          # GPU models (3) * parts (24) = 72 tasks
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=60G
@@ -23,7 +23,7 @@ LLMS=(
 )
 JUDGE_LLM="azure-claude-haiku-4-5"
 LLMS_LEN=${#LLMS[@]}
-PARTS=($(seq 1 23))
+PARTS=($(seq 1 24))
 PARTS_LEN=${#PARTS[@]}
 
 # Configurations
