@@ -8,7 +8,7 @@
 #SBATCH --mem=60G
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu       # GPU partition
-#SBATCH --gres=gpu:a100:1          # Request 1 A100 or H100 GPU
+#SBATCH --gres=gpu:h100:1          # Request 1 A100 or H100 GPU
 
 
 echo "Load modules..."
