@@ -5,7 +5,7 @@
 #SBATCH --array=0-71          # GPU models (3) * parts (24) = 72 tasks
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=60G
+#SBATCH --mem=100G
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu       # GPU partition
 #SBATCH --gres=gpu:h100:1          # Request 1 A100 or H100 GPU
@@ -68,22 +68,22 @@ python run_geneagent.py \
 echo -e "\n=== Stopping Ollama Server ==="
 ~/ollama/ollama-manager.sh stop
 
-# Step 2: Evaluate predictions
-echo -e "\n=== Step 2: Evaluating Predictions ==="
-echo -e "\n--- Process Names ---"
-python evaluate_pathway_predictions.py \
-    --input "$INPUT_FILE" \
-    --llm "$LLM" \
-    --judge-llm "$JUDGE_LLM" \
-    || exit 1
+# # Step 2: Evaluate predictions
+# echo -e "\n=== Step 2: Evaluating Predictions ==="
+# echo -e "\n--- Process Names ---"
+# python evaluate_pathway_predictions.py \
+#     --input "$INPUT_FILE" \
+#     --llm "$LLM" \
+#     --judge-llm "$JUDGE_LLM" \
+#     || exit 1
 
-echo -e "\n--- Analytic Narratives ---"
-python evaluate_pathway_predictions.py \
-    --input "$INPUT_FILE" \
-    --llm "$LLM" \
-    --include-descriptions \
-    --judge-llm "$JUDGE_LLM" \
-    || exit 1
+# echo -e "\n--- Analytic Narratives ---"
+# python evaluate_pathway_predictions.py \
+#     --input "$INPUT_FILE" \
+#     --llm "$LLM" \
+#     --include-descriptions \
+#     --judge-llm "$JUDGE_LLM" \
+#     || exit 1
 
 
 echo -e "\n=========================================="
