@@ -1,6 +1,6 @@
 # Experiment files and outputs
 Outputs/
-Outputs_Finished/
+Outputs_*/
 Datasets/AlzKB/
 logs/
 .claude/
