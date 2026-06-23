@@ -12,7 +12,7 @@
 
 # API-based LLMs (no GPU required)
 LLMS=(
-    "azure-gpt-5.5"
+    "azure-gpt-5.4-mini"
 )
 JUDGE_LLM="azure-claude-haiku-4-5"
 # Configuration
