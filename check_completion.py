@@ -2,13 +2,15 @@
 check_completion.py
 Regenerates incomplete_by_part.csv by checking each (LLM, part, noise_level)
 combination in Outputs/ against its input file, then moves any newly-complete
-noise-level folders to Outputs_Finished/.
+noise-level folders to Outputs_Finished/, and rewrites run_geneagent_gpu_incomplete.slurm
+with the current set of incomplete (LLM, part) tasks.
 
 Usage:
     python check_completion.py
 """
 
 import os
+import re
 import shutil
 import pandas as pd
 
@@ -20,6 +22,7 @@ REPORT_PATH = os.path.join(OUTPUTS, "incomplete_by_part.csv")
 
 LLMS         = ["gpt-oss:20b", "gemma4:26b", "mixtral:8x22b"]
 NOISE_LEVELS = ["full_set", "reduced_set", "noise_20", "noise_40", "noise_60", "noise_80"]
+SLURM_PATH   = os.path.join(BASE_DIR, "run_geneagent_gpu_incomplete.slurm")
 
 
 def load_output_csv(path):
@@ -99,6 +102,78 @@ def check_all():
         print(f"  Moved to Outputs_Finished: {llm}/{part_folder}/{noise}")
 
     print(f"\nDone. {len(newly_finished)} folder(s) moved to Outputs_Finished/.")
+
+    generate_slurm(incomplete_rows)
+
+
+def generate_slurm(incomplete_rows):
+    """Rewrite the CONFIGS block and --array directive in the slurm script."""
+    if not os.path.exists(SLURM_PATH):
+        print(f"Slurm template not found: {SLURM_PATH}")
+        return
+
+    # Group incomplete noise levels by (llm, part)
+    groups = {}
+    for row in incomplete_rows:
+        key = (row["llm"], row["part"])   # part is like "part3"
+        groups.setdefault(key, []).append(row["noise_level"])
+
+    if not groups:
+        print("No incomplete combinations — slurm script not updated.")
+        return
+
+    # Sort by canonical LLM order, then numeric part
+    llm_order = {llm: i for i, llm in enumerate(LLMS)}
+    sorted_keys = sorted(
+        groups.keys(),
+        key=lambda k: (llm_order.get(k[0], 999), int(k[1].replace("part", "")))
+    )
+    n_tasks = len(sorted_keys)
+
+    # Compute per-LLM index ranges for the section comments
+    llm_ranges = {}
+    for idx, (llm, _) in enumerate(sorted_keys):
+        if llm not in llm_ranges:
+            llm_ranges[llm] = [idx, idx]
+        else:
+            llm_ranges[llm][1] = idx
+
+    # Build CONFIGS lines with LLM section headers
+    config_lines = []
+    current_llm = None
+    for idx, (llm, part) in enumerate(sorted_keys):
+        if llm != current_llm:
+            current_llm = llm
+            s, e = llm_ranges[llm]
+            index_str = f"index {s}" if s == e else f"indices {s}-{e}"
+            config_lines.append(f"    # {llm} ({index_str})")
+        part_num = part.replace("part", "")
+        # preserve canonical noise-level ordering
+        # noise_levels here is to be skipped
+        noise_str = " ".join(n for n in NOISE_LEVELS if n not in groups[(llm, part)])
+        config_lines.append(f'    "{llm}|{part_num}|{noise_str}"')
+
+    configs_block = "CONFIGS=(\n" + "\n".join(config_lines) + "\n)"
+    print(configs_block)
+
+    counts_str = " + ".join(
+        f"{llm} ({llm_ranges[llm][1] - llm_ranges[llm][0] + 1})"
+        for llm in LLMS if llm in llm_ranges
+    )
+    array_range = "0" if n_tasks == 1 else f"0-{n_tasks - 1}"
+    array_line = f"#SBATCH --array={array_range}          # {n_tasks} tasks: {counts_str}"
+
+    with open(SLURM_PATH) as f:
+        content = f.read()
+
+    content = re.sub(r"#SBATCH --array=\S+[^\n]*", array_line, content)
+    content = re.sub(r"CONFIGS=\(.*?\n\)", configs_block, content, flags=re.DOTALL)
+
+    with open(SLURM_PATH, "w") as f:
+        f.write(content)
+
+    print(f"Updated {SLURM_PATH}: {n_tasks} task(s) across "
+          f"{len(llm_ranges)} LLM(s).")
 
 
 if __name__ == "__main__":
