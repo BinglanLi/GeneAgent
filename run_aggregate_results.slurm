@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32G
-#SBATCH --time=4:00:00ß
+#SBATCH --time=4:00:00
 
 # LLMs
 LLMS=(
