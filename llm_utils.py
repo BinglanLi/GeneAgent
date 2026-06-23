@@ -56,6 +56,11 @@ class SimpleLLMClient:
         # Fix model name for azure models
         if self.source == "AzureOpenAI":
             self.llm_model = self.llm_model.replace("azure-", "").replace("azure_", "")
+        # BaseAgent hard-codes num_ctx=8192 for Ollama, which is too small for long
+        # GeneAgent prompts (input alone can exceed 6k tokens). Mixtral 8x22b supports
+        # up to 65536 — use 32768 as a safe default that fits in GPU memory.
+        if self.source == "Ollama" and hasattr(self.llm, "num_ctx"):
+            self.llm.num_ctx = 32768
     
     def chat(
         self, 
