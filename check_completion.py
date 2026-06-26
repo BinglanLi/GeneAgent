@@ -154,7 +154,6 @@ def generate_slurm(incomplete_rows):
         config_lines.append(f'    "{llm}|{part_num}|{noise_str}"')
 
     configs_block = "CONFIGS=(\n" + "\n".join(config_lines) + "\n)"
-    print(configs_block)
 
     counts_str = " + ".join(
         f"{llm} ({llm_ranges[llm][1] - llm_ranges[llm][0] + 1})"
