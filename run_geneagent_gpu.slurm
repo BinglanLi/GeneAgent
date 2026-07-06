@@ -68,23 +68,6 @@ python run_geneagent.py \
 echo -e "\n=== Stopping Ollama Server ==="
 ~/ollama/ollama-manager.sh stop
 
-# # Step 2: Evaluate predictions
-# echo -e "\n=== Step 2: Evaluating Predictions ==="
-# echo -e "\n--- Process Names ---"
-# python evaluate_pathway_predictions.py \
-#     --input "$INPUT_FILE" \
-#     --llm "$LLM" \
-#     --judge-llm "$JUDGE_LLM" \
-#     || exit 1
-
-# echo -e "\n--- Analytic Narratives ---"
-# python evaluate_pathway_predictions.py \
-#     --input "$INPUT_FILE" \
-#     --llm "$LLM" \
-#     --include-descriptions \
-#     --judge-llm "$JUDGE_LLM" \
-#     || exit 1
-
 
 echo -e "\n=========================================="
 echo "COMPLETED: $LLM"
