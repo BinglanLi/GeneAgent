@@ -5,10 +5,10 @@
 #SBATCH --array=0-71          # GPU models (3) * parts (24) = 72 tasks
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=100G
-#SBATCH --time=24:00:00
+#SBATCH --mem=60G
+#SBATCH --time=48:00:00
 #SBATCH --partition=gpu       # GPU partition
-#SBATCH --gres=gpu:h100:1          # Request 1 A100 or H100 GPU
+#SBATCH --gres=gpu:h100:2          # Request 2 A100 or H100 GPU
 
 
 echo "Load modules..."
@@ -63,6 +63,7 @@ echo -e "\n=== Step 1: Running GeneAgent ==="
 python run_geneagent.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
+    --skip-columns full_set reduced_set \
     || exit 1
 # Stop Ollama server
 echo -e "\n=== Stopping Ollama Server ==="
