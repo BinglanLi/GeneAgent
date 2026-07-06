@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
-#SBATCH --time=48:00:00
+#SBATCH --time=72:00:00
 #SBATCH --partition=moore
 
 
