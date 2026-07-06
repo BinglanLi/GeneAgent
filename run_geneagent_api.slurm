@@ -43,6 +43,7 @@ echo -e "\n=== Step 1: Running GeneAgent ==="
 python run_geneagent.py \
     --input "$INPUT_FILE" \
     --llm "$LLM" \
+    --skip-columns full_set reduced_set \
     || exit 1
 
 # Step 2: Evaluate predictions
