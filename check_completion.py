@@ -25,15 +25,16 @@ NOISE_LEVELS = ["full_set", "reduced_set", "noise_20", "noise_40", "noise_60", "
 SLURM_PATH   = os.path.join(BASE_DIR, "run_geneagent_gpu_incomplete.slurm")
 
 
-def load_output_csv(path):
-    """Return DataFrame or None if file is missing/empty."""
-    if not os.path.exists(path):
-        return None
-    try:
-        df = pd.read_csv(path)
-        return df if not df.empty else None
-    except pd.errors.EmptyDataError:
-        return None
+def count_process_lines(txt_path):
+    """Count lines matching '^Process:' in Final_Response_GeneAgent.txt."""
+    if not os.path.exists(txt_path):
+        return 0
+    count = 0
+    with open(txt_path, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if line.startswith("Process:"):
+                count += 1
+    return count
 
 
 def check_all():
@@ -54,27 +55,17 @@ def check_all():
             if not os.path.exists(input_path):
                 continue
 
-            df_in        = pd.read_csv(input_path)
-            expected     = len(df_in)
-            expected_ids = set(range(expected))
-
-            eval_csv = os.path.join(OUTPUTS, llm, part_folder,
-                                    "evaluation_results_processNames.csv")
-            df_out = load_output_csv(eval_csv)
+            df_in    = pd.read_csv(input_path)
+            expected = len(df_in)
 
             for noise in NOISE_LEVELS:
                 noise_dir = os.path.join(OUTPUTS, llm, part_folder, noise)
                 if not os.path.isdir(noise_dir):
                     continue  # already moved or never existed
 
-                if df_out is not None:
-                    done_ids  = set(df_out.loc[df_out["prediction_type"] == noise,
-                                               "pathway_id"])
-                    completed = len(expected_ids & done_ids)
-                else:
-                    completed = 0
-
-                missing = expected - completed
+                txt_path  = os.path.join(noise_dir, "Final_Response_GeneAgent.txt")
+                completed = count_process_lines(txt_path)
+                missing   = expected - completed
 
                 if missing > 0:
                     incomplete_rows.append({
