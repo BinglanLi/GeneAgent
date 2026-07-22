@@ -2,7 +2,7 @@
 #SBATCH --job-name=aggregate
 #SBATCH --output=logs/aggregate_%A_%a.out
 #SBATCH --error=logs/aggregate_%A_%a.err
-#SBATCH --array=0-2              # One task per GPU LLM (3 models)
+#SBATCH --array=0              # One task per GPU LLM (3 models)
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32G
@@ -10,6 +10,7 @@
 
 # LLMs
 LLMS=(
+    "azure-gpt-5.4-mini"
     "gpt-oss:20b"
     "gemma4:26b"
     "mixtral:8x22b"
