@@ -2,7 +2,7 @@
 check_completion.py
 Regenerates incomplete_by_part.csv by checking each (LLM, part, noise_level)
 combination in Outputs/ against its input file, then moves any newly-complete
-noise-level folders to Outputs_Finished/, and rewrites run_geneagent_gpu_incomplete.slurm
+noise-level folders to Outputs_Backup/, and rewrites run_geneagent_gpu_incomplete.slurm
 with the current set of incomplete (LLM, part) tasks.
 
 Usage:
@@ -16,7 +16,7 @@ import pandas as pd
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUTS     = os.path.join(BASE_DIR, "Outputs")
-FINISHED    = os.path.join(BASE_DIR, "Outputs_Finished")
+FINISHED    = os.path.join(BASE_DIR, "Outputs_Backup")
 INPUT_DIR   = os.path.join(BASE_DIR, "Datasets", "AlzKB")
 REPORT_PATH = os.path.join(OUTPUTS, "incomplete_by_part.csv")
 
@@ -25,16 +25,15 @@ NOISE_LEVELS = ["full_set", "reduced_set", "noise_20", "noise_40", "noise_60", "
 SLURM_PATH   = os.path.join(BASE_DIR, "run_geneagent_gpu_incomplete.slurm")
 
 
-def count_process_lines(txt_path):
-    """Count lines matching '^Process:' in Final_Response_GeneAgent.txt."""
-    if not os.path.exists(txt_path):
-        return 0
-    count = 0
-    with open(txt_path, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            if line.startswith("Process:"):
-                count += 1
-    return count
+def load_output_csv(path):
+    """Return DataFrame or None if file is missing/empty."""
+    if not os.path.exists(path):
+        return None
+    try:
+        df = pd.read_csv(path)
+        return df if not df.empty else None
+    except pd.errors.EmptyDataError:
+        return None
 
 
 def check_all():
@@ -55,17 +54,27 @@ def check_all():
             if not os.path.exists(input_path):
                 continue
 
-            df_in    = pd.read_csv(input_path)
-            expected = len(df_in)
+            df_in        = pd.read_csv(input_path)
+            expected     = len(df_in)
+            expected_ids = set(range(expected))
+
+            eval_csv = os.path.join(OUTPUTS, llm, part_folder,
+                                    "evaluation_results_processNames.csv")
+            df_out = load_output_csv(eval_csv)
 
             for noise in NOISE_LEVELS:
                 noise_dir = os.path.join(OUTPUTS, llm, part_folder, noise)
                 if not os.path.isdir(noise_dir):
                     continue  # already moved or never existed
 
-                txt_path  = os.path.join(noise_dir, "Final_Response_GeneAgent.txt")
-                completed = count_process_lines(txt_path)
-                missing   = expected - completed
+                if df_out is not None:
+                    done_ids  = set(df_out.loc[df_out["prediction_type"] == noise,
+                                               "pathway_id"])
+                    completed = len(expected_ids & done_ids)
+                else:
+                    completed = 0
+
+                missing = expected - completed
 
                 if missing > 0:
                     incomplete_rows.append({
@@ -89,10 +98,10 @@ def check_all():
     for llm, part_folder, noise, src in newly_finished:
         dst = os.path.join(FINISHED, llm, part_folder, noise)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.move(src, dst)
-        print(f"  Moved to Outputs_Finished: {llm}/{part_folder}/{noise}")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        print(f"  Moved to Outputs_Backup: {llm}/{part_folder}/{noise}")
 
-    print(f"\nDone. {len(newly_finished)} folder(s) moved to Outputs_Finished/.")
+    print(f"\nDone. {len(newly_finished)} folder(s) moved to Outputs_Backup/.")
 
     generate_slurm(incomplete_rows)
 
