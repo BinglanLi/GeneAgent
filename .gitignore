@@ -4,6 +4,7 @@ Outputs_*/
 Datasets/AlzKB/
 logs/
 .claude/
+figures/
 
 .DS_Store
 __pycache__/
