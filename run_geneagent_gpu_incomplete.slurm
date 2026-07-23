@@ -2,7 +2,7 @@
 #SBATCH --job-name=geneagent_incomplete
 #SBATCH --output=logs/geneagent_incomplete_%A_%a.out
 #SBATCH --error=logs/geneagent_incomplete_%A_%a.err
-#SBATCH --array=0-59          # 60 tasks: gpt-oss:20b (12) + gemma4:26b (24) + mixtral:8x22b (24)
+#SBATCH --array=0-24          # 25 tasks: gpt-oss:20b (3) + gemma4:26b (22)
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=120G
@@ -17,69 +17,10 @@ module load cuda12.6
 # Format: "llm|part|skip_col1 skip_col2 ..."  (empty skip = all columns incomplete, run all)
 # Skip columns are those already complete and should not be overwritten.
 CONFIGS=(
-    # gpt-oss:20b (indices 0-11)
-    "gpt-oss:20b|11|full_set reduced_set noise_20 noise_40"
-    "gpt-oss:20b|12|full_set reduced_set noise_80"
-    "gpt-oss:20b|14|full_set reduced_set noise_20 noise_40 noise_60"
-    "gpt-oss:20b|15|full_set reduced_set noise_20 noise_40 noise_60"
-    "gpt-oss:20b|17|full_set reduced_set noise_80"
-    "gpt-oss:20b|18|full_set reduced_set noise_20"
-    "gpt-oss:20b|19|full_set reduced_set"
-    "gpt-oss:20b|20|full_set reduced_set noise_80"
-    "gpt-oss:20b|21|full_set reduced_set"
-    "gpt-oss:20b|22|full_set reduced_set"
-    "gpt-oss:20b|23|full_set reduced_set"
-    "gpt-oss:20b|24|full_set reduced_set"
-    # gemma4:26b (indices 12-35)
-    "gemma4:26b|1|full_set reduced_set"
-    "gemma4:26b|2|full_set reduced_set"
-    "gemma4:26b|3|full_set reduced_set"
-    "gemma4:26b|4|full_set reduced_set"
-    "gemma4:26b|5|full_set reduced_set"
-    "gemma4:26b|6|full_set reduced_set"
-    "gemma4:26b|7|full_set reduced_set"
-    "gemma4:26b|8|full_set reduced_set"
-    "gemma4:26b|9|full_set reduced_set"
-    "gemma4:26b|10|full_set reduced_set"
-    "gemma4:26b|11|full_set reduced_set"
-    "gemma4:26b|12|full_set reduced_set"
-    "gemma4:26b|13|full_set reduced_set"
-    "gemma4:26b|14|full_set reduced_set"
-    "gemma4:26b|15|full_set reduced_set"
-    "gemma4:26b|16|full_set reduced_set"
-    "gemma4:26b|17|full_set reduced_set"
-    "gemma4:26b|18|full_set reduced_set"
-    "gemma4:26b|19|full_set reduced_set"
-    "gemma4:26b|20|full_set reduced_set"
-    "gemma4:26b|21|full_set reduced_set"
-    "gemma4:26b|22|full_set reduced_set"
-    "gemma4:26b|23|full_set reduced_set"
-    "gemma4:26b|24|full_set reduced_set"
-    # mixtral:8x22b (indices 36-59)
-    "mixtral:8x22b|1|full_set reduced_set"
-    "mixtral:8x22b|2|full_set reduced_set"
-    "mixtral:8x22b|3|full_set reduced_set"
-    "mixtral:8x22b|4|full_set reduced_set"
-    "mixtral:8x22b|5|full_set reduced_set"
-    "mixtral:8x22b|6|full_set reduced_set"
-    "mixtral:8x22b|7|full_set reduced_set"
-    "mixtral:8x22b|8|full_set reduced_set"
-    "mixtral:8x22b|9|full_set reduced_set"
-    "mixtral:8x22b|10|full_set reduced_set"
-    "mixtral:8x22b|11|full_set reduced_set"
-    "mixtral:8x22b|12|full_set reduced_set"
-    "mixtral:8x22b|13|full_set reduced_set"
-    "mixtral:8x22b|14|full_set reduced_set"
-    "mixtral:8x22b|15|full_set reduced_set"
-    "mixtral:8x22b|16|full_set reduced_set"
-    "mixtral:8x22b|17|full_set reduced_set"
-    "mixtral:8x22b|18|full_set reduced_set"
-    "mixtral:8x22b|19|full_set reduced_set"
-    "mixtral:8x22b|20|full_set reduced_set"
-    "mixtral:8x22b|21|full_set reduced_set"
-    "mixtral:8x22b|22|full_set reduced_set"
-    "mixtral:8x22b|23|full_set reduced_set"
-    "mixtral:8x22b|24|full_set reduced_set"
+    # gpt-oss:20b (indices 0-2)
+    "gpt-oss:20b|12|full_set reduced_set noise_20 noise_60 noise_80"
+    "gpt-oss:20b|20|full_set reduced_set noise_20 noise_40 noise_60"
+    "gpt-oss:20b|22|full_set reduced_set noise_20 noise_40 noise_80"
 )
 
 IFS='|' read -r LLM PART SKIP_COLS <<< "${CONFIGS[$SLURM_ARRAY_TASK_ID]}"
@@ -109,6 +50,7 @@ export OLLAMA_MAX_QUEUE=512
 
 echo -e "\n=== Starting Ollama Server ==="
 ~/ollama/ollama-manager.sh start
+echo "$OLLAMA_HOST"
 
 echo -e "\n=== Running GeneAgent ==="
 SKIP_ARGS=()
