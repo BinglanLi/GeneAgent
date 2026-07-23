@@ -70,6 +70,15 @@ echo -e "\n=== Stopping Ollama Server ==="
 ~/ollama/ollama-manager.sh stop
 
 
+# Step 2: Evaluate predictions
+# Save this step for check_completion.py
+echo -e "\n=== Step 2: Evaluating Predictions ==="
+echo -e "\n--- Process Names ---"
+python evaluate_pathway_predictions.py \
+    --input "$INPUT_FILE" \
+    --llm "$LLM" \
+    || exit 1
+
 echo -e "\n=========================================="
 echo "COMPLETED: $LLM"
 echo "End: $(date)"
