@@ -59,8 +59,12 @@ class SimpleLLMClient:
         # BaseAgent hard-codes num_ctx=8192 for Ollama, which is too small for long
         # GeneAgent prompts (input alone can exceed 6k tokens). Mixtral 8x22b supports
         # up to 65536 — use 32768 as a safe default that fits in GPU memory.
-        if self.source == "Ollama" and hasattr(self.llm, "num_ctx"):
-            self.llm.num_ctx = 32768
+        # For gpt-oss models, self.llm is OllamaWithToolCallExtraction (a wrapper whose
+        # __getattr__ forwards reads to _base_llm but whose default __setattr__ would
+        # shadow writes on the wrapper instance). Reach through to _base_llm directly.
+        actual_llm = getattr(self.llm, '_base_llm', self.llm)
+        if self.source == "Ollama" and hasattr(actual_llm, "num_ctx"):
+            actual_llm.num_ctx = 32768
     
     def chat(
         self, 
