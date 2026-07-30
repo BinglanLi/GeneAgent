@@ -1,93 +1,10 @@
 import time
-import json
 import re
-import uuid
 
 from llm_utils import get_llm_client
 from costs import record_chat_completion_cost
 
-
-def repair_json_string(json_str: str) -> str:
-	"""
-	Repair common JSON formatting errors from Ollama models.
-
-	Common issues:
-	- Extra closing braces: {"key": "val"}}
-	- Trailing commas: {"key": "val",}
-	- Missing quotes: {key: "val"}
-	- Extra spaces/newlines
-	"""
-	# Remove extra whitespace
-	json_str = json_str.strip()
-
-	# Remove trailing commas before closing braces
-	json_str = re.sub(r',\s*}', '}', json_str)
-	json_str = re.sub(r',\s*]', ']', json_str)
-
-	# Remove extra closing braces at the end
-	while json_str.endswith('}}') and json_str.count('{') < json_str.count('}'):
-		json_str = json_str[:-1]
-
-	# Try to balance braces
-	open_braces = json_str.count('{')
-	close_braces = json_str.count('}')
-	if open_braces > close_braces:
-		json_str += '}' * (open_braces - close_braces)
-	elif close_braces > open_braces:
-		# Remove extra closing braces from the end
-		extra = close_braces - open_braces
-		for _ in range(extra):
-			if json_str.endswith('}'):
-				json_str = json_str[:-1]
-
-	return json_str
-
-
-def extract_and_repair_tool_call(error_message: str, available_functions: dict = None) -> dict:
-	"""
-	Extract tool call arguments from Ollama error message and attempt to repair them.
-
-	Error format: "error parsing tool call: raw='{"gene..."}', err=..."
-	"""
-	# Extract the raw JSON from the error message
-	match = re.search(r"raw='([^']+)'", error_message)
-	if not match:
-		return None
-
-	raw_json = match.group(1)
-
-	# Attempt to repair common JSON issues
-	repaired_json = repair_json_string(raw_json)
-
-	try:
-		# Try to parse the repaired JSON
-		parsed_args = json.loads(repaired_json)
-
-		# Try to infer function name from arguments
-		function_name = "unknown"
-		if available_functions:
-			# Match based on parameter names
-			arg_keys = set(parsed_args.keys())
-			for func_name, func_schema in available_functions.items():
-				params = func_schema.get("parameters", {}).get("properties", {})
-				param_keys = set(params.keys())
-				# If all required args match, this is likely the right function
-				if arg_keys.issubset(param_keys) or param_keys.issubset(arg_keys):
-					function_name = func_name
-					break
-
-		# Construct a tool call in LangChain format
-		tool_call = {
-			"name": function_name,
-			"args": parsed_args,
-			"id": f"call_{uuid.uuid4().hex[:24]}"
-		}
-		return tool_call
-	except json.JSONDecodeError as e:
-		print(f"✗ Failed to repair JSON: {e}")
-		return None
-
-from apis.get_complex_for_gene_set import get_complex_for_gene_set, get_complex_for_gene_set_doc 
+from apis.get_complex_for_gene_set import get_complex_for_gene_set, get_complex_for_gene_set_doc
 from apis.get_disease_for_single_gene import get_disease_for_single_gene, get_disease_for_single_gene_doc
 from apis.get_domain_for_single_gene import get_domain_for_single_gene, get_domain_for_single_gene_doc
 from apis.get_enrichment_for_gene_set import get_enrichment_for_gene_set, get_enrichment_for_gene_set_doc
@@ -154,41 +71,17 @@ class AgentPhD:
 			loop += 1
 			time.sleep(1)
 
-			# Use LangChain-native tool calling via BaseAgent
+			# Use LangChain-native tool calling via BaseAgent.
+			# llm_client.chat_with_tools() repairs malformed Ollama tool-call output itself;
+			# any exception here means repair wasn't possible, so skip this iteration.
 			try:
 				response, usage_metrics = llm_client.chat_with_tools(
 					messages=message_verification,
 					tools=self.function_docs,
 				)
-			except Exception as E:
-				error_msg = str(E)
-				# Try to repair Ollama JSON parsing errors
-				if "error parsing tool call" in error_msg or "invalid character" in error_msg:
-					print(f"⚠ Ollama JSON error detected, attempting repair...")
-
-					# Build a dict of available functions with their schemas
-					available_funcs = {doc["name"]: doc for doc in self.function_docs}
-
-					# Try to extract and repair the tool call from error message
-					repaired_tool_call = extract_and_repair_tool_call(error_msg, available_funcs)
-
-					if repaired_tool_call:
-						print(f"✓ Repaired tool call: {repaired_tool_call['name']}")
-
-						# Create a mock response object with the repaired tool call
-						class MockResponse:
-							def __init__(self, tool_calls):
-								self.tool_calls = tool_calls
-								self.content = ""
-
-						response = MockResponse([repaired_tool_call])
-						usage_metrics = None  # No usage metrics from failed call
-					else:
-						print(f"✗ Could not repair JSON, skipping iteration")
-						continue
-				else:
-					# Re-raise unexpected errors
-					raise
+			except Exception as e:
+				print(f"✗ chat_with_tools failed, skipping iteration: {e}")
+				continue
 
 			# Convert usage_metrics to dict for cost tracking
 			usage_dict = None

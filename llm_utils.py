@@ -12,6 +12,9 @@ Key improvements:
 """
 
 import os
+import json
+import re
+import uuid
 import requests
 from typing import Optional, Tuple
 from dotenv import load_dotenv
@@ -21,6 +24,77 @@ from BaseAgent.config import default_config
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 
 load_dotenv()
+
+
+def _repair_json_string(json_str: str) -> str:
+    """
+    Repair common JSON formatting errors from Ollama models.
+
+    Common issues:
+    - Extra closing braces: {"key": "val"}}
+    - Trailing commas: {"key": "val",}
+    - Extra spaces/newlines
+    """
+    json_str = json_str.strip()
+
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+
+    while json_str.endswith('}}') and json_str.count('{') < json_str.count('}'):
+        json_str = json_str[:-1]
+
+    open_braces = json_str.count('{')
+    close_braces = json_str.count('}')
+    if open_braces > close_braces:
+        json_str += '}' * (open_braces - close_braces)
+    elif close_braces > open_braces:
+        extra = close_braces - open_braces
+        for _ in range(extra):
+            if json_str.endswith('}'):
+                json_str = json_str[:-1]
+
+    return json_str
+
+
+def _extract_and_repair_tool_call(error_message: str, available_functions: dict) -> Optional[dict]:
+    """
+    Extract tool call arguments from an Ollama tool-call parsing error and repair them.
+
+    Ollama's client-side tool-call parser can fail on models with weaker native tool
+    support (e.g. gpt-oss), raising errors like:
+    "error parsing tool call: raw='{"gene...", err=...".
+    This recovers the intended call so the caller can proceed instead of losing the turn.
+
+    Args:
+        error_message: The exception message raised by the bound LLM's invoke()
+        available_functions: Dict of {function_name: openai_style_schema} used to
+            infer which function was being called, since Ollama's error doesn't
+            reliably include the function name in a parseable form.
+    """
+    match = re.search(r"raw='([^']+)'", error_message)
+    if not match:
+        return None
+
+    repaired_json = _repair_json_string(match.group(1))
+
+    try:
+        parsed_args = json.loads(repaired_json)
+    except json.JSONDecodeError:
+        return None
+
+    function_name = "unknown"
+    arg_keys = set(parsed_args.keys())
+    for func_name, func_schema in available_functions.items():
+        param_keys = set(func_schema.get("parameters", {}).get("properties", {}).keys())
+        if arg_keys.issubset(param_keys) or param_keys.issubset(arg_keys):
+            function_name = func_name
+            break
+
+    return {
+        "name": function_name,
+        "args": parsed_args,
+        "id": f"call_{uuid.uuid4().hex[:24]}",
+    }
 
 
 class SimpleLLMClient:
@@ -59,12 +133,8 @@ class SimpleLLMClient:
         # BaseAgent hard-codes num_ctx=8192 for Ollama, which is too small for long
         # GeneAgent prompts (input alone can exceed 6k tokens). Mixtral 8x22b supports
         # up to 65536 — use 32768 as a safe default that fits in GPU memory.
-        # For gpt-oss models, self.llm is OllamaWithToolCallExtraction (a wrapper whose
-        # __getattr__ forwards reads to _base_llm but whose default __setattr__ would
-        # shadow writes on the wrapper instance). Reach through to _base_llm directly.
-        actual_llm = getattr(self.llm, '_base_llm', self.llm)
-        if self.source == "Ollama" and hasattr(actual_llm, "num_ctx"):
-            actual_llm.num_ctx = 32768
+        if self.source == "Ollama" and hasattr(self.llm, "num_ctx"):
+            self.llm.num_ctx = 32768
     
     def chat(
         self, 
@@ -115,11 +185,13 @@ class SimpleLLMClient:
         Chat completion with tool calling using LangChain's native infrastructure.
 
         This method uses BaseAgent's LLM with .bind_tools() for consistent behavior
-        across all providers (OpenAI, Anthropic, Ollama, etc.).
+        across all providers (OpenAI, Anthropic, Ollama, etc.). For Ollama models with
+        weak native tool-call support (e.g. gpt-oss), a malformed tool call is repaired
+        from the raw error text rather than propagated as an exception.
 
         Args:
             messages: List of message dicts in LangChain format
-            tools: List of LangChain tool/function objects
+            tools: List of OpenAI-style tool/function schemas
 
         Returns:
             Tuple of (response_message, usage_metrics)
@@ -131,8 +203,22 @@ class SimpleLLMClient:
         # LangChain accepts OpenAI-style schemas directly
         llm_with_tools = self.llm.bind_tools(tools)
 
-        # Invoke with tools
-        response = llm_with_tools.invoke(lc_messages)
+        try:
+            response = llm_with_tools.invoke(lc_messages)
+        except Exception as e:
+            error_msg = str(e)
+            is_ollama_parse_error = self.source == "Ollama" and (
+                "error parsing tool call" in error_msg or "invalid character" in error_msg
+            )
+            if not is_ollama_parse_error:
+                raise
+
+            available_functions = {t["name"]: t for t in tools}
+            repaired_call = _extract_and_repair_tool_call(error_msg, available_functions)
+            if repaired_call is None:
+                raise
+
+            response = AIMessage(content="", tool_calls=[repaired_call])
 
         # Extract usage metrics using BaseAgent's utility
         usage_metrics = extract_usage_metrics(
