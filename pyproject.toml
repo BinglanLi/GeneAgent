@@ -42,3 +42,10 @@ all = [
 
 [tool.uv.sources]
 baseagent = { git = "https://github.com/BinglanLi/BaseAgent.git", rev = "2a68b9730c82e901679c71630359273662d3a805" }
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
